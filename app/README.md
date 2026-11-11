@@ -4,15 +4,19 @@ TÜMÜ-revize.xlsx verisini yönetmek için web uygulaması.
 
 ## Özellikler
 
-- **Tablo:** sayfalama, sıralama (sayı/tarih uyumlu), sütun gösterme-gizleme
-- **Filtreleme:** genel arama (Türkçe uyumlu) + her sütunda ayrı filtre
-- **Özet kartları:** duruma / türe göre tek tıkla filtreleme
-- **Kayıt detayı:** tüm alanları görme ve düzenleme (revizyon notu ile)
-- **Revizyon geçmişi:** her değişiklikte alan bazında eski → yeni kaydı
+- **Panel:** KPI kartları, durum pastası, proje grafikleri, yaklaşan görevler, hareket akışı
+- **Kayıtlar:** sayfalama, sıralama (sayı/tarih uyumlu), sütun gösterme-gizleme, sıkışık/rahat görünüm
+- **Filtreleme:** genel arama (Türkçe uyumlu) + her sütunda ayrı filtre + kayıtlı görünümler
+- **Toplu işlem:** çoklu seçimle toplu etiket atama ve toplu görev oluşturma
+- **Canlı özetler:** filtreye göre satış toplamı/ortalaması ve kira ortalaması
+- **Kayıt detayı:** genel + tüm alanlar, tek tıkla arama (telefon), durum rozetleri
+- **Revizyon geçmişi:** her değişiklikte alan bazında eski → yeni kaydı (zaman çizelgesi)
 - **Notlar:** her kayda sınırsız not ekleme / düzenleme / silme
-- **Görevler:** kayıt bazında yapılacaklar, bitiş tarihi, genel görev listesi
-- **Etiketler:** renkli etiketler, etikete göre filtreleme
+- **Görevler:** kayıt bazında yapılacaklar, bitiş tarihi, gecikmiş/bugün gruplu genel liste
+- **Etiketler:** renkli etiketler, kullanım sayıları, etikete göre filtreleme
+- **Komut paleti (Ctrl+K):** kayıtlara hızlı gitme + komutlar
 - **Dışa aktarma:** filtrelenmiş sonucu CSV veya XLSX indirme
+- **Koyu tema** + klavye kısayolları (Ctrl+K, Esc)
 
 ## Çalıştırma
 

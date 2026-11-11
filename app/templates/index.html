@@ -3,63 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Emlak Kayıt Yönetimi</title>
+<title>Emlak Panel — Kayıt Yönetimi</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">🏠 <b>Emlak</b> <span>Kayıt Yönetimi</span></div>
-  <div class="search">
-    <input id="q" type="search" placeholder="Genel arama: ad, adres, telefon, proje, ID..." autocomplete="off">
-    <button id="qclear" title="Temizle">×</button>
+<div id="app">
+  <aside id="sidebar">
+    <div class="logo"><span class="logo-mark">E</span><span class="logo-txt">Emlak<b>Panel</b></span></div>
+    <nav id="nav">
+      <button data-view="dashboard"><span class="ic" data-ic="dash"></span><span>Panel</span></button>
+      <button data-view="records"><span class="ic" data-ic="table"></span><span>Kayıtlar</span><em id="nav-total" class="nav-n"></em></button>
+      <button data-view="tasks"><span class="ic" data-ic="check"></span><span>Görevler</span><em id="nav-tasks" class="nav-n"></em></button>
+      <button data-view="tags"><span class="ic" data-ic="tag"></span><span>Etiketler</span></button>
+    </nav>
+    <div class="side-sec">Kayıtlı görünümler</div>
+    <div id="side-views"></div>
+    <div class="side-foot">
+      <button id="theme-btn" class="side-btn"><span class="ic" data-ic="moon"></span><span id="theme-lbl">Koyu tema</span></button>
+      <div class="ver">TÜMÜ Revize • v2.0</div>
+    </div>
+  </aside>
+  <div id="side-bg" class="side-bg" hidden></div>
+  <div class="main">
+    <header class="topbar">
+      <button id="menu-btn" class="iconbtn" title="Menü"><span class="ic" data-ic="menu"></span></button>
+      <div class="crumb" id="crumb">Panel</div>
+      <button class="cmdk" id="cmdk-btn"><span class="ic" data-ic="search"></span><span class="cmdk-ph">Ara, kayda git veya komut çalıştır…</span><kbd>Ctrl K</kbd></button>
+      <div class="top-actions">
+        <button id="btn-export" class="btn primary"><span class="ic" data-ic="download"></span><span>Dışa Aktar</span></button>
+      </div>
+    </header>
+    <main id="view"></main>
   </div>
-  <div class="actions">
-    <button id="btn-tasks" class="btn">✓ Görevler <em id="tasks-badge" class="badge" hidden></em></button>
-    <button id="btn-tags" class="btn">🏷 Etiketler</button>
-    <button id="btn-cols" class="btn">☰ Sütunlar</button>
-    <button id="btn-export" class="btn primary">⬇ Dışa Aktar</button>
-  </div>
-</header>
-
-<section id="stats" class="stats"><div class="loading">yükleniyor...</div></section>
-
-<main class="tablewrap">
-  <div class="toolbar">
-    <div id="active-filters" class="afilters"></div>
-    <div class="pager" id="pager-top"></div>
-  </div>
-  <div class="scroll">
-    <table id="grid">
-      <thead id="grid-head"></thead>
-      <tbody id="grid-body"></tbody>
-    </table>
-  </div>
-  <div class="toolbar bottom">
-    <div id="count-info" class="count"></div>
-    <div class="pager" id="pager-bottom"></div>
-    <label class="perpage">Sayfa başına
-      <select id="perpage">
-        <option value="25">25</option>
-        <option value="50" selected>50</option>
-        <option value="100">100</option>
-        <option value="200">200</option>
-      </select>
-    </label>
-  </div>
-</main>
+</div>
 
 <aside id="drawer" class="drawer" hidden>
   <div class="drawer-head">
-    <div>
+    <div class="drawer-titlewrap">
+      <div id="drawer-status"></div>
       <div id="drawer-title" class="drawer-title"></div>
       <div id="drawer-sub" class="drawer-sub"></div>
     </div>
-    <button id="drawer-close" class="btn icon" title="Kapat">✕</button>
+    <div class="drawer-headbtns">
+      <span id="drawer-call"></span>
+      <button id="drawer-close" class="iconbtn" title="Kapat (Esc)"><span class="ic" data-ic="x"></span></button>
+    </div>
   </div>
   <div id="drawer-tags" class="drawer-tags"></div>
   <nav class="tabs" id="drawer-tabs">
-    <button data-tab="info" class="active">Bilgiler</button>
+    <button data-tab="info" class="active">Genel</button>
+    <button data-tab="all">Tüm Alanlar</button>
     <button data-tab="revs">Revizyonlar <em id="cnt-revs"></em></button>
     <button data-tab="notes">Notlar <em id="cnt-notes"></em></button>
     <button data-tab="tasks">Görevler <em id="cnt-tasks"></em></button>
@@ -67,6 +61,7 @@
   </nav>
   <div class="drawer-body">
     <section id="tab-info"></section>
+    <section id="tab-all" hidden></section>
     <section id="tab-revs" hidden></section>
     <section id="tab-notes" hidden></section>
     <section id="tab-tasks" hidden></section>
@@ -76,8 +71,13 @@
 <div id="drawer-bg" class="drawer-bg" hidden></div>
 
 <div id="modal-root"></div>
+<div id="palette-root"></div>
 <div id="toasts" class="toasts"></div>
 
 <script src="/static/app.js"></script>
+<script src="/static/charts.js"></script>
+<script src="/static/records.js"></script>
+<script src="/static/detail.js"></script>
+<script src="/static/misc.js"></script>
 </body>
 </html>

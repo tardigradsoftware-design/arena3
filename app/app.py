@@ -183,7 +183,18 @@ def api_stats():
                  c.execute("SELECT c9 v, COUNT(*) n FROM records GROUP BY c9 ORDER BY n DESC")]
     by_type = [{"v": r["v"], "n": r["n"]} for r in
                c.execute("SELECT c5 v, COUNT(*) n FROM records GROUP BY c5 ORDER BY n DESC")]
+    by_project = [{"v": r["v"], "n": r["n"]} for r in
+                  c.execute("SELECT c21 v, COUNT(*) n FROM records GROUP BY c21 ORDER BY n DESC LIMIT 10")]
+    by_room = [{"v": r["v"], "n": r["n"]} for r in
+               c.execute("SELECT c33 v, COUNT(*) n FROM records GROUP BY c33 ORDER BY n DESC")]
+    sale = c.execute("SELECT COUNT(n23) cnt, SUM(n23) s, AVG(n23) a FROM records WHERE n23 IS NOT NULL").fetchone()
+    rent = c.execute("SELECT COUNT(n7) cnt, AVG(n7) a FROM records WHERE n7 IS NOT NULL").fetchone()
     open_tasks = c.execute("SELECT COUNT(*) FROM tasks WHERE done = 0").fetchone()[0]
+    tasks_overdue = c.execute("""SELECT COUNT(*) FROM tasks
+        WHERE done = 0 AND due_date IS NOT NULL AND due_date < date('now')""").fetchone()[0]
+    tasks_today = c.execute("SELECT COUNT(*) FROM tasks WHERE done = 0 AND due_date = date('now')").fetchone()[0]
+    tasks_week = c.execute("""SELECT COUNT(*) FROM tasks WHERE done = 0 AND due_date IS NOT NULL
+        AND due_date BETWEEN date('now') AND date('now', '+7 days')""").fetchone()[0]
     notes_total = c.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
     rev_total = c.execute("SELECT COUNT(*) FROM revisions").fetchone()[0]
     tags = [{"id": r["id"], "name": r["name"], "color": r["color"], "count": r["n"]} for r in
@@ -192,8 +203,55 @@ def api_stats():
                          GROUP BY t.id ORDER BY t.name""")]
     c.close()
     return jsonify({"total": total, "by_status": by_status, "by_type": by_type,
-                    "open_tasks": open_tasks, "notes_total": notes_total,
-                    "rev_total": rev_total, "tags": tags})
+                    "by_project": by_project, "by_room": by_room,
+                    "sale_count": sale["cnt"], "sale_total": sale["s"], "sale_avg": sale["a"],
+                    "rent_count": rent["cnt"], "rent_avg": rent["a"],
+                    "open_tasks": open_tasks, "tasks_overdue": tasks_overdue,
+                    "tasks_today": tasks_today, "tasks_week": tasks_week,
+                    "notes_total": notes_total, "rev_total": rev_total, "tags": tags})
+
+
+@app.get("/api/aggregate")
+def api_aggregate():
+    col = request.args.get("col", "")
+    m = by_key(col) if KEY_RE.match(col or "") else None
+    if not m or m["dtype"] != "number":
+        return jsonify({"error": "sayısal bir sütun seçin"}), 400
+    where, params = apply_filters(request.args)
+    cond = f"{where} AND r.n{col[1:]} IS NOT NULL" if where else f"WHERE r.n{col[1:]} IS NOT NULL"
+    c = cn()
+    r = c.execute(f"""SELECT COUNT(*) cnt, SUM(r.n{col[1:]}) s, AVG(r.n{col[1:]}) a,
+        MIN(r.n{col[1:]}) mn, MAX(r.n{col[1:]}) mx FROM records r {cond}""", params).fetchone()
+    c.close()
+    return jsonify({"count": r["cnt"], "sum": r["s"], "avg": r["a"], "min": r["mn"], "max": r["mx"]})
+
+
+@app.get("/api/activity")
+def api_activity():
+    try:
+        limit = min(100, max(5, int(request.args.get("limit", 30) or 30)))
+    except ValueError:
+        return jsonify({"error": "limit geçersiz"}), 400
+    c = cn()
+    items = []
+    for r in c.execute("""SELECT r.changed_at t, r.record_id, r.col_title, r.old_value, r.new_value, r.note,
+        rec.c0, rec.c1, rec.c2, rec.row_no FROM revisions r
+        JOIN records rec ON rec.id = r.record_id ORDER BY r.id DESC LIMIT ?""", (limit,)):
+        items.append({"kind": "rev", "time": r["t"], "record_id": r["record_id"], "label": task_label(r),
+                      "title": r["col_title"], "old": r["old_value"], "new": r["new_value"], "note": r["note"]})
+    for r in c.execute("""SELECT n.created_at t, n.record_id, n.text,
+        rec.c0, rec.c1, rec.c2, rec.row_no FROM notes n
+        JOIN records rec ON rec.id = n.record_id ORDER BY n.id DESC LIMIT ?""", (limit,)):
+        items.append({"kind": "note", "time": r["t"], "record_id": r["record_id"],
+                      "label": task_label(r), "text": r["text"]})
+    for r in c.execute("""SELECT t.created_at t, t.record_id, t.title, t.done,
+        rec.c0, rec.c1, rec.c2, rec.row_no FROM tasks t
+        JOIN records rec ON rec.id = t.record_id ORDER BY t.id DESC LIMIT ?""", (limit,)):
+        items.append({"kind": "task", "time": r["t"], "record_id": r["record_id"],
+                      "label": task_label(r), "title": r["title"], "done": r["done"]})
+    c.close()
+    items.sort(key=lambda x: x["time"] or "", reverse=True)
+    return jsonify(items[:limit])
 
 
 @app.get("/api/records/<int:rid>")
@@ -243,8 +301,9 @@ def parse_tr_date(s):
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
         try:
             dt = datetime.strptime(s, fmt)
-            canon = dt.strftime("%Y-%m-%d %H:%M") if ("H" in fmt or dt.hour or dt.minute) else dt.strftime("%Y-%m-%d")
-            if "%H" not in fmt and not dt.hour and not dt.minute:
+            if "%H" in fmt or dt.hour or dt.minute:
+                canon = dt.strftime("%Y-%m-%d %H:%M")
+            else:
                 canon = dt.strftime("%Y-%m-%d")
             return canon, dt.timestamp()
         except ValueError:
@@ -460,6 +519,70 @@ def api_task_del(tid):
     return jsonify({"ok": True})
 
 
+# ---------------- toplu işlemler ----------------
+def clean_ids(ids):
+    out = []
+    for i in (ids or []):
+        try:
+            out.append(int(i))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+@app.post("/api/bulk/tags")
+def api_bulk_tags():
+    body = request.get_json(force=True, silent=True) or {}
+    ids = clean_ids(body.get("record_ids"))
+    if not ids or len(ids) > 2000:
+        return jsonify({"error": "1-2000 arası kayıt seçin"}), 400
+    tid = body.get("tag_id")
+    c = cn()
+    if tid is None and (body.get("name") or "").strip():
+        name = body["name"].strip()
+        color = (body.get("color") or "#4f46e5").strip()
+        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            color = "#4f46e5"
+        try:
+            cur = c.execute("INSERT INTO tags (name, color) VALUES (?,?)", (name, color))
+            tid = cur.lastrowid
+        except sqlite3.IntegrityError:
+            tid = c.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()["id"]
+    try:
+        tid = int(tid)
+    except (TypeError, ValueError):
+        c.close()
+        return jsonify({"error": "etiket seçin"}), 400
+    if not c.execute("SELECT 1 FROM tags WHERE id = ?", (tid,)).fetchone():
+        c.close()
+        return jsonify({"error": "etiket bulunamadı"}), 404
+    c.executemany("INSERT OR IGNORE INTO record_tags VALUES (?,?)", [(i, tid) for i in ids])
+    c.commit()
+    c.close()
+    return jsonify({"ok": True, "count": len(ids)})
+
+
+@app.post("/api/bulk/tasks")
+def api_bulk_tasks():
+    body = request.get_json(force=True, silent=True) or {}
+    ids = clean_ids(body.get("record_ids"))
+    title = (body.get("title") or "").strip()
+    due = (body.get("due_date") or "").strip() or None
+    if not ids or len(ids) > 2000:
+        return jsonify({"error": "1-2000 arası kayıt seçin"}), 400
+    if not title:
+        return jsonify({"error": "görev boş olamaz"}), 400
+    if due and not re.match(r"^\d{4}-\d{2}-\d{2}$", due):
+        return jsonify({"error": "tarih YYYY-AA-GG olmalı"}), 400
+    t = now()
+    c = cn()
+    c.executemany("""INSERT INTO tasks (record_id, title, done, due_date, created_at, updated_at)
+                     VALUES (?,?,0,?,?,?)""", [(i, title, due, t, t) for i in ids])
+    c.commit()
+    c.close()
+    return jsonify({"ok": True, "count": len(ids)})
+
+
 # ---------------- etiketler ----------------
 @app.get("/api/tags")
 def api_tags():
@@ -475,7 +598,7 @@ def api_tags():
 def api_tag_add():
     body = request.get_json(force=True, silent=True) or {}
     name = (body.get("name") or "").strip()
-    color = (body.get("color") or "#2563eb").strip() or "#2563eb"
+    color = (body.get("color") or "#4f46e5").strip() or "#4f46e5"
     if not name:
         return jsonify({"error": "etiket adı boş olamaz"}), 400
     if not re.match(r"^#[0-9a-fA-F]{6}$", color):
@@ -540,9 +663,9 @@ def api_record_tag_add(rid):
     tid = body.get("tag_id")
     if tid is None and body.get("name"):
         name = body["name"].strip()
-        color = (body.get("color") or "#2563eb").strip()
+        color = (body.get("color") or "#4f46e5").strip()
         if not re.match(r"^#[0-9a-fA-F]{6}$", color):
-            color = "#2563eb"
+            color = "#4f46e5"
         try:
             cur = c.execute("INSERT INTO tags (name, color) VALUES (?,?)", (name, color))
             tid = cur.lastrowid
@@ -579,7 +702,6 @@ def api_export():
                      params).fetchall()
     c.close()
     titles = ["Kayıt No", "Excel Satırı"] + [m["title"] for m in meta()]
-    letters = ["", ""] + [m["letter"] for m in meta()]
     if fmt == "xlsx":
         from openpyxl import Workbook
         from openpyxl.styles import Font

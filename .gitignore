@@ -1,0 +1,11 @@
+# veri dosyaları (kişisel veri içerir - asla git'e eklenmez)
+*.xlsx
+*.xls
+*.db
+*.sqlite3
+google_drive/
+
+# python
+.venv/
+__pycache__/
+*.pyc

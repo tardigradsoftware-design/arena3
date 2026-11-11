@@ -23,6 +23,7 @@ Views.dashboard = (() => {
     const saleable = (s.by_status.find((x) => x.v === "SATILIK") || {}).n || 0;
     const sold = (s.by_status.find((x) => x.v === "SATILMIŞ") || {}).n || 0;
     const soon = tasks.filter((t) => t.due_date).slice(0, 7);
+    const agenda = tasks.filter((t) => t.due_date && t.due_date <= todayStr()).slice(0, 8);
     const statusSegs = s.by_status.filter((x) => x.v && x.v !== "Seçiniz").slice(0, 8);
     el.innerHTML = `
       <div class="page-head"><div><h1>Panel</h1><div class="sub">Portföy özeti, ${fmtDate(todayStr())}</div></div>
@@ -33,6 +34,10 @@ Views.dashboard = (() => {
         ${kpi("b-amber", "Açık görev", s.open_tasks, `${s.tasks_overdue} gecikmiş · ${s.tasks_today} bugün · ${s.tasks_week} bu hafta`, "tasks")}
         ${kpi("b-red", "Hareket", (s.rev_total + s.notes_total).toLocaleString("tr-TR"), `${s.rev_total} revizyon · ${s.notes_total} not`, "")}
       </div>
+      ${agenda.length ? `<div class="card card-pad" style="margin-bottom:16px"><h3>Bugünkü ajanda</h3>${agenda.map((t) =>
+        `<div class="minitask"><span class="t">${esc(t.title)}</span>
+         <span data-goto="${t.record_id}" style="color:var(--brand);cursor:pointer;font-size:12px">${esc(t.label)}</span>
+         <span class="duepill${isOverdue(t.due_date) ? " over" : " today"}">${dueText(t.due_date)}</span></div>`).join("")}</div>` : ""}
       <div class="dash-grid">
         <div class="card"><h3>Durum dağılımı</h3><div class="donut-wrap">${donut(statusSegs.map((x) => ({ label: x.v, value: x.n })))}
           <div class="legend">${statusSegs.map((x) =>

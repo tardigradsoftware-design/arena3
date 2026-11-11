@@ -61,23 +61,30 @@ def cell_text_num(v):
     return (s if s != "" else None), None
 
 
-def main():
-    if not os.path.exists(XLSX):
-        raise SystemExit(f"Excel bulunamadı: {XLSX}  (DATA_XLSX ile yol verilebilir)")
-    print(f">> okunuyor: {XLSX}")
-    wb = openpyxl.load_workbook(XLSX, read_only=True, data_only=True)
-    ws = wb.active
+def row_values(out, dtypes):
+    """[(metin, sayı)] -> (c_list, n_list, t_list, search)."""
+    cs = [s for s, _ in out]
+    ns = [num if dtypes[c] in ("number", "date") else None for c, (_, num) in enumerate(out)]
+    ts = [tr_lower(s) if (s is not None and dtypes[c] != "number") else None
+          for c, s in enumerate(cs)]
+    search = " ".join(tr_lower(s) for s in cs if s)
+    return cs, ns, ts, search
 
+
+def parse_workbook(path):
+    """Excel dosyasını okur -> (titles, rows, dtypes).
+    rows: satır başına [(metin, sayı) x 47] listesi (başlık hariç)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Excel bulunamadı: {path} (DATA_XLSX ile yol verilebilir)")
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
     titles = []
     for c in range(1, N_COLS + 1):
         h = ws.cell(1, c).value
         h = str(h).strip() if h not in (None, "") else f"Sütun {get_column_letter(c)}"
         titles.append(FRIENDLY.get(h, h))
-
-    rows, flags, distinct = [], [], [set() for _ in range(N_COLS)]
-    for c in range(N_COLS):
-        flags.append({"dt": 0, "num": 0, "str": 0})
-    n = 0
+    rows, flags = [], [{"dt": 0, "num": 0, "str": 0} for _ in range(N_COLS)]
+    distinct = [set() for _ in range(N_COLS)]
     for row in ws.iter_rows(min_row=2, values_only=True):
         out = []
         for c in range(N_COLS):
@@ -94,10 +101,7 @@ def main():
                 if len(distinct[c]) < 500:
                     distinct[c].add(s)
         rows.append(out)
-        n += 1
     wb.close()
-    print(f">> {n} satır okundu")
-
     dtypes = []
     for c in range(N_COLS):
         f = flags[c]
@@ -109,7 +113,12 @@ def main():
             dtypes.append("number")
         else:
             dtypes.append("text")
+    return titles, rows, dtypes, distinct
 
+
+def main():
+    titles, rows, dtypes, distinct = parse_workbook(XLSX)
+    print(f">> {len(rows)} satır okundu: {XLSX}")
     os.makedirs(os.path.dirname(DB), exist_ok=True)
     if os.path.exists(DB):
         os.remove(DB)
@@ -118,7 +127,8 @@ def main():
     coldefs = ", ".join(f"c{i} TEXT" for i in range(N_COLS))
     numdefs = ", ".join(f"n{i} REAL" for i in range(N_COLS))
     txtdefs = ", ".join(f"t{i} TEXT" for i in range(N_COLS))
-    cc.execute(f"CREATE TABLE records (id INTEGER PRIMARY KEY, row_no INTEGER, {coldefs}, {numdefs}, {txtdefs}, search TEXT)")
+    cc.execute(f"""CREATE TABLE records (id INTEGER PRIMARY KEY, row_no INTEGER,
+        {coldefs}, {numdefs}, {txtdefs}, search TEXT, sync_state TEXT DEFAULT 'active')""")
     cc.execute("""CREATE TABLE columns (
         key TEXT PRIMARY KEY, pos INTEGER, letter TEXT, title TEXT,
         dtype TEXT, visible INTEGER, filter_values TEXT)""")
@@ -129,10 +139,13 @@ def main():
     cc.execute("CREATE TABLE record_tags (record_id INTEGER, tag_id INTEGER, PRIMARY KEY (record_id, tag_id))")
     cc.execute("""CREATE TABLE revisions (id INTEGER PRIMARY KEY, record_id INTEGER, col_key TEXT,
         col_title TEXT, old_value TEXT, new_value TEXT, note TEXT, changed_at TEXT)""")
+    cc.execute("""CREATE TABLE sync_log (id INTEGER PRIMARY KEY, at TEXT,
+        added INTEGER, updated_rows INTEGER, updated_cells INTEGER, deleted INTEGER)""")
     cc.execute("CREATE INDEX ix_notes_rec ON notes(record_id)")
     cc.execute("CREATE INDEX ix_tasks_rec ON tasks(record_id)")
     cc.execute("CREATE INDEX ix_rtags_rec ON record_tags(record_id)")
     cc.execute("CREATE INDEX ix_rev_rec ON revisions(record_id)")
+    cc.execute("CREATE INDEX ix_rec_rowno ON records(row_no)")
 
     for c in range(N_COLS):
         vals = sorted(distinct[c])
@@ -148,16 +161,14 @@ def main():
                     0 if c in HIDE_DEFAULT else 1, filt))
 
     ins = (f"INSERT INTO records (row_no, {','.join(f'c{i}' for i in range(N_COLS))},"
-           f"{','.join(f'n{i}' for i in range(N_COLS))},{','.join(f't{i}' for i in range(N_COLS))},search)"
-           f" VALUES ({','.join('?' for _ in range(1 + 3 * N_COLS + 1))})")
+           f"{','.join(f'n{i}' for i in range(N_COLS))},{','.join(f't{i}' for i in range(N_COLS))},search,sync_state)"
+           f" VALUES ({','.join('?' for _ in range(2 + 3 * N_COLS + 1))})")
     batch = []
-    for rno, out in enumerate(rows, start=2):
-        cs = [s for s, _ in out]
-        ns = [num if dtypes[c] in ("number", "date") else None for c, (_, num) in enumerate(out)]
-        ts = [tr_lower(s) if (s is not None and dtypes[c] != "number") else None
-              for c, s in enumerate(cs)]
-        search = " ".join(tr_lower(s) for s in cs if s)
-        batch.append([rno] + cs + ns + ts + [search])
+    for out in rows:
+        cs, ns, ts, search = row_values(out, dtypes)
+        batch.append([None] + cs + ns + ts + [search, "active"])
+    # row_no = Excel satır numarası (2'den başlar)
+    batch = [[i + 2] + b[1:] for i, b in enumerate(batch)]
     cc.executemany(ins, batch)
     cn.commit()
     print(f">> yazıldı: {DB} ({cn.execute('SELECT COUNT(*) FROM records').fetchone()[0]} kayıt)")

@@ -17,6 +17,13 @@ TÜMÜ-revize.xlsx verisini yönetmek için web uygulaması.
 - **Komut paleti (Ctrl+K):** kayıtlara hızlı gitme + komutlar
 - **Dışa aktarma:** filtrelenmiş sonucu CSV veya XLSX indirme
 - **Koyu tema** + klavye kısayolları (Ctrl+K, Esc)
+- **Excel'den güncelle:** yeni export ile tek tıkla senkron (not/görev/etiket korunur, değişiklikler revizyona işlenir)
+- **Yeni ilan:** programa manuel kayıt girişi
+- **Toplu durum:** seçili kayıtların durumunu tek seferde değiştirme (revizyonlu)
+- **Karşılaştırma:** 2-4 kaydı yan yana kıyaslama
+- **İlan sayfası:** yazdırılabilir / paylaşılabilir ilan föyü (`/ilan/<id>`)
+- **Fiyat analizi:** m² birim fiyatı + fiyat geçmişi grafiği
+- **Harita + ilan linki** kısayolları, **bugünkü ajanda** paneli
 
 ## Çalıştırma
 

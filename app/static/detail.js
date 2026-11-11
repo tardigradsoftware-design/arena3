@@ -2,13 +2,17 @@
 /* Emlak Panel v2 — kayıt detay çekmecesi */
 const Detail = (() => {
   let rid = null, D = null;
-  const GENEL = ["c1", "c2", "c3", "c5", "c6", "c7", "c9", "c10", "c11", "c13", "c15", "c17", "c19", "c21", "c23", "c24", "c25", "c27", "c28", "c32", "c33", "c34"];
+  const GENEL = ["c1", "c2", "c3", "c5", "c6", "c7", "c9", "c10", "c11", "c13", "c15", "c17", "c19", "c21", "c23", "c24", "c25", "c27", "c28", "c32", "c33", "c34", "c37"];
   const byKey = (k) => COLS.find((c) => c.key === k);
 
   function telHref(v) {
     const d = String(v || "").replace(/\D/g, "");
     if (!d) return null;
     return "tel:+" + (d.startsWith("0") ? "9" + d : d.startsWith("90") ? d : "90" + d);
+  }
+  function mapsURL(r) {
+    const q = [r.c1, r.c16, r.c12, r.c8, r.c4].filter((x) => x).join(" ");
+    return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
   }
 
   function bind() {
@@ -35,22 +39,65 @@ const Detail = (() => {
   async function refresh() { D = await api("/api/records/" + rid); paint(); }
   function afterMutation() { refreshStats(); Records.refreshIfActive(); if (currentView === "tasks") Views.tasks.render($("#view")); if (currentView === "dashboard") Views.dashboard.render($("#view")); }
 
+  function priceHistorySVG(key) {
+    const pts = D.revisions.filter((v) => v.col_key === key && parseFloat(v.new_value) > 0).reverse();
+    if (pts.length < 1) return "";
+    const vals = pts.map((v) => parseFloat(v.new_value));
+    const all = [...vals];
+    const first = pts[0];
+    if (first && parseFloat(first.old_value) > 0) all.unshift(parseFloat(first.old_value));
+    if (all.length < 2) return "";
+    const W = 260, H = 64, P = 6;
+    const mn = Math.min(...all), mx = Math.max(...all), rg = (mx - mn) || 1;
+    const X = (i) => (P + (i * (W - 2 * P)) / (all.length - 1)).toFixed(1);
+    const Y = (v) => (H - P - ((v - mn) / rg) * (H - 2 * P)).toFixed(1);
+    const line = all.map((v, i) => `${X(i)},${Y(v)}`).join(" ");
+    const last = all[all.length - 1], prev = all[all.length - 2];
+    const col = last >= prev ? "var(--ok)" : "var(--bad)";
+    return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block">
+      <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round"/>
+      ${all.map((v, i) => `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${col}"><title>${fmtMoney(v)}</title></circle>`).join("")}</svg>`;
+  }
+
+  function paintInsights() {
+    const r = D.record;
+    const cards = [];
+    const m2 = parseFloat(r.c3);
+    const sale = parseFloat(r.c23), rent = parseFloat(r.c7);
+    if (sale > 0 && m2 > 0) cards.push(["m² birim (satış)", fmtMoney(sale / m2)]);
+    if (rent > 0 && m2 > 0) cards.push(["m² birim (kira)", fmtMoney(rent / m2)]);
+    if (sale > 0 && rent > 0) cards.push(["Satış / yıllık kira", (sale / (rent * 12)).toFixed(1) + " yıl"]);
+    const hist = priceHistorySVG("c23") || priceHistorySVG("c7");
+    if (!cards.length && !hist) return "";
+    return `<div class="card" style="margin-bottom:14px;padding:14px 16px">
+      <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center">
+        ${cards.map(([l, v]) => `<div><div style="font-size:11.5px;color:var(--muted);font-weight:600">${l}</div>
+          <div style="font-size:19px;font-weight:800;color:var(--brand)">${esc(v)}</div></div>`).join("")}
+        ${hist ? `<div style="flex:1;min-width:220px"><div style="font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:4px">Fiyat geçmişi</div>${hist}</div>` : ""}
+      </div></div>`;
+  }
+
   function paint() {
     const r = D.record;
-    $("#drawer-status").innerHTML = pill(r.c9);
+    $("#drawer-status").innerHTML = pill(r.c9) +
+      (r.sync_state === "deleted" ? ' <span class="pill red">Excel\'de silinmiş</span>' : "") +
+      (r.sync_state === "manual" ? ' <span class="pill violet">Manuel kayıt</span>' : "");
     $("#drawer-title").textContent = `#${r.c0 || "?"} — ${r.c1 || "Adres yok"}`;
-    $("#drawer-sub").textContent = [r.c21, r.c5, r.c33, r.c2 && !PLACEHOLDER.has(r.c2) ? "Daire " + r.c2 : ""].filter(Boolean).join(" • ") + `  ·  Excel satırı ${r.row_no}`;
+    $("#drawer-sub").textContent = [r.c21, r.c5, r.c33, r.c2 && !PLACEHOLDER.has(r.c2) ? "Daire " + r.c2 : ""].filter(Boolean).join(" • ") + `  ·  ${r.row_no ? "Excel satırı " + r.row_no : "manuel kayıt"}`;
     const tel = telHref(r.c17);
-    $("#drawer-call").innerHTML = tel
-      ? `<a class="btn small" href="${tel}">${icon("phone")}<span>${esc(r.c17)}</span></a>` : "";
-    hydrateIcons($("#drawer"));
+    let btns = "";
+    if (tel) btns += `<a class="btn small" href="${tel}">${icon("phone")}<span>${esc(r.c17)}</span></a>`;
+    btns += `<a class="btn small" href="/ilan/${r.id}" target="_blank" rel="noopener">${icon("eye")}<span>İlan sayfası</span></a>`;
+    btns += `<a class="btn small" href="${mapsURL(r)}" target="_blank" rel="noopener">${icon("home")}<span>Harita</span></a>`;
+    if (r.c37) btns += `<a class="btn small" href="${esc(r.c37)}" target="_blank" rel="noopener">${icon("arrow")}<span>İlan linki</span></a>`;
+    $("#drawer-call").innerHTML = btns;
     $("#drawer-tags").innerHTML = D.tags.map((t) =>
       `<span class="tagchip" style="background:${esc(t.color)}">${esc(t.name)}</span>`).join("");
     $("#cnt-revs").textContent = D.revisions.length || "";
     $("#cnt-notes").textContent = D.notes.length || "";
     $("#cnt-tasks").textContent = D.tasks.filter((t) => !t.done).length || "";
-    paintForm("info", GENEL);
-    paintForm("all", COLS.map((c) => c.key));
+    paintForm("info", GENEL, true);
+    paintForm("all", COLS.map((c) => c.key), false);
     paintRevs(); paintNotes(); paintTasks(); paintTags();
   }
 
@@ -71,12 +118,14 @@ const Detail = (() => {
     return h + "</div>";
   }
 
-  function paintForm(tab, keys) {
+  function paintForm(tab, keys, insights) {
     const r = D.record;
-    $("#tab-" + tab).innerHTML = `<div class="fgrid">${keys.map((k) => fieldHTML(byKey(k), r[k])).join("")}</div>
+    const banner = r.sync_state === "deleted"
+      ? `<div class="card" style="margin-bottom:14px;padding:11px 14px;border-color:var(--bad);background:var(--bad-bg);font-size:13px">⚠ Bu kayıt Excel dosyasında artık bulunmuyor. Verileriniz korunur; silinmez.</div>` : "";
+    $("#tab-" + tab).innerHTML = banner + (insights ? paintInsights() : "") +
+      `<div class="fgrid">${keys.map((k) => fieldHTML(byKey(k), r[k])).join("")}</div>
       <div class="savebar"><input id="rev-note-${tab}" placeholder="Revizyon notu (örn: telefon güncellendi)…">
       <button class="btn primary" id="btn-save-${tab}">${icon("check")}<span>Kaydet</span></button></div>`;
-    hydrateIcons($("#tab-" + tab));
     $$(`#tab-${tab} [data-k]`).forEach((el) =>
       el.oninput = () => el.classList.toggle("dirty", el.value !== el.dataset.orig));
     $("#btn-save-" + tab).onclick = () => save(tab);

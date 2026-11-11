@@ -3,10 +3,13 @@
 const Records = (() => {
   const S = { page: 1, per: 50, sort: "", dir: "asc", q: "", filters: {}, tag: "", openTasks: false, hasNotes: false, selected: new Set() };
   let total = 0, pages = 1, pageIds = [];
+  let lastSync = null;
 
   const visCols = () => COLS.filter((c) => c.visible);
-  const MONEY = new Set(["c7", "c11", "c15", "c19", "c23"]);
   const PILL_COLS = new Set(["c5", "c9", "c10"]);
+  const NEW_FIELDS = ["c0", "c1", "c2", "c3", "c5", "c6", "c7", "c9", "c10", "c11", "c13", "c15", "c17", "c19", "c21", "c23", "c24", "c25", "c27", "c28", "c32", "c33", "c34", "c37"];
+  const CMP_FIELDS = ["c0", "c1", "c2", "c3", "c5", "c6", "c7", "c9", "c10", "c11", "c13", "c15", "c17", "c19", "c21", "c23", "c24", "c25", "c27", "c28", "c32", "c33", "c34"];
+  const byKey = (k) => COLS.find((c) => c.key === k);
 
   function params(extra = {}) {
     const p = new URLSearchParams();
@@ -27,6 +30,8 @@ const Records = (() => {
   }
   function badgesHTML(r) {
     let h = "";
+    if (r.sync_state === "deleted") h += `<span class="pill red">Excel'de silinmiş</span> `;
+    if (r.sync_state === "manual") h += `<span class="pill violet">Manuel</span> `;
     for (const t of r.tags) h += `<span class="tagchip" style="background:${esc(t.color)}">${esc(t.name)}</span>`;
     if (r.notes_n) h += `<span class="mini has">✎ ${r.notes_n}</span>`;
     if (r.tasks_open) h += `<span class="mini warn">☐ ${r.tasks_open}</span>`;
@@ -120,11 +125,12 @@ const Records = (() => {
         api("/api/aggregate?" + params({ col: "c23" })),
         api("/api/aggregate?" + params({ col: "c7" })),
       ]);
+      const sync = lastSync ? `<div class="agg"><span class="l">Son Excel senkronu</span><b>${esc(fmtDate(lastSync.at))}</b></div>` : "";
       box.innerHTML =
         `<div class="agg"><span class="l">Satış toplamı</span><b>${fmtMoney(sale.sum)}</b></div>
          <div class="agg"><span class="l">Satış ort.</span><b>${fmtMoney(sale.avg)}</b></div>
          <div class="agg"><span class="l">Kira ort.</span><b>${fmtMoney(rent.avg)}</b></div>
-         <div class="agg"><span class="l">Fiyatlı kayıt</span><b>${(sale.count || 0).toLocaleString("tr-TR")}</b></div>`;
+         <div class="agg"><span class="l">Fiyatlı kayıt</span><b>${(sale.count || 0).toLocaleString("tr-TR")}</b></div>${sync}`;
     } catch (e) { box.innerHTML = ""; }
   }
 
@@ -181,10 +187,14 @@ const Records = (() => {
     bar.innerHTML = `<b>${S.selected.size.toLocaleString("tr-TR")} kayıt seçili</b>
       <button class="btn small" id="bulk-tag">Etiket ata</button>
       <button class="btn small" id="bulk-task">Görev oluştur</button>
+      <button class="btn small" id="bulk-status">Durum değiştir</button>
+      <button class="btn small" id="bulk-cmp">Karşılaştır</button>
       <button class="btn small" id="bulk-clear">Seçimi temizle</button>`;
     $("#bulk-clear").onclick = () => { S.selected.clear(); load(); };
     $("#bulk-tag").onclick = openBulkTag;
     $("#bulk-task").onclick = openBulkTask;
+    $("#bulk-status").onclick = openBulkStatus;
+    $("#bulk-cmp").onclick = openCompare;
   }
 
   async function openBulkTag() {
@@ -229,6 +239,137 @@ const Records = (() => {
         closeModal(); toast(`${d.count} kayda görev eklendi`, "ok");
         S.selected.clear(); load(); refreshStats();
       } catch (e) { toast(e.message, "err"); }
+    };
+  }
+
+  function openBulkStatus() {
+    const opts = (byKey("c9").filter || []).filter((v) => v !== "Seçiniz");
+    const bg = openModal(`Durum değiştir (${S.selected.size} kayıt)`, `
+      <div class="mrow"><label>Yeni durum</label><select id="bs-v">
+        ${opts.map((v) => `<option>${esc(v)}</option>`).join("")}</select></div>
+      <div class="mrow"><label>Revizyon notu</label><input type="text" id="bs-n" placeholder="Örn: toplu arşivleme"></div>
+      <p style="color:var(--muted);font-size:12.5px;margin:0">Her kayıt için ayrı revizyon kaydı oluşturulur.</p>`, {
+      foot: `<button class="btn" id="bs-no">Vazgeç</button><button class="btn primary" id="bs-ok">Uygula</button>`
+    });
+    $("#bs-no", bg).onclick = closeModal;
+    $("#bs-ok", bg).onclick = async () => {
+      try {
+        const d = await api("/api/bulk/status", {
+          method: "POST",
+          body: JSON.stringify({ record_ids: [...S.selected], value: $("#bs-v", bg).value, note: $("#bs-n", bg).value })
+        });
+        closeModal(); toast(`${d.count} kaydın durumu güncellendi`, "ok");
+        S.selected.clear(); load(); refreshStats();
+      } catch (e) { toast(e.message, "err"); }
+    };
+  }
+
+  async function openCompare() {
+    const ids = [...S.selected];
+    if (ids.length < 2) { toast("Karşılaştırma için en az 2 kayıt seçin", "err"); return; }
+    if (ids.length > 4) { toast("En fazla 4 kayıt karşılaştırılabilir", "err"); return; }
+    const bg = openModal("Karşılaştırma", '<div class="loading">yükleniyor…</div>', { wide: true });
+    try {
+      const ds = await Promise.all(ids.map((id) => api("/api/records/" + id)));
+      const recs = ds.map((d) => d.record);
+      let h = `<div style="overflow-x:auto"><table class="grid"><thead><tr><th>Alan</th>${recs.map((r) =>
+        `<th><span class="lnk" data-cgoto="${r.id}" style="color:var(--brand);cursor:pointer">#${esc(r.c0 || "?")} — ${esc(r.c1 || "")}</span></th>`).join("")}</tr></thead><tbody>`;
+      for (const k of CMP_FIELDS) {
+        const c = byKey(k);
+        const vals = recs.map((r) => r[k]);
+        const diff = new Set(vals.map((v) => v ?? "")).size > 1;
+        h += `<tr${diff ? ' style="background:var(--brand-soft)"' : ""}><td style="color:var(--muted)">${esc(c.title)}</td>${vals.map((v) =>
+          `<td>${k === "c9" || k === "c5" || k === "c10" ? pill(v) : fmtVal(c, v)}</td>`).join("")}</tr>`;
+      }
+      // m² birim satırları
+      const pm = recs.map((r) => {
+        const p = parseFloat(r.c23), m2 = parseFloat(r.c3);
+        return p > 0 && m2 > 0 ? fmtMoney(p / m2) : "—";
+      });
+      h += `<tr style="background:var(--brand-soft)"><td style="color:var(--muted)">m² birim (satış)</td>${pm.map((v) => `<td><b>${esc(v)}</b></td>`).join("")}</tr>`;
+      bg.querySelector(".modal-body").innerHTML = h + "</tbody></table></div>";
+      $$("[data-cgoto]", bg).forEach((x) => x.onclick = () => { closeModal(); Detail.open(+x.dataset.cgoto); });
+    } catch (e) { bg.querySelector(".modal-body").innerHTML = `<div class="empty">Hata: ${esc(e.message)}</div>`; }
+  }
+
+  /* ---- yeni ilan ---- */
+  function newFieldHTML(c) {
+    let h = `<div class="field"><label>${esc(c.title)}</label>`;
+    if (c.filter) {
+      h += `<select data-nk="${c.key}"><option value="">—</option>${c.filter.filter((v) => v !== "Seçiniz").map((v) =>
+        `<option>${esc(v)}</option>`).join("")}</select>`;
+    } else if (c.dtype === "date") {
+      h += `<input type="date" data-nk="${c.key}">`;
+    } else {
+      h += `<input data-nk="${c.key}"${c.dtype === "number" ? ' inputmode="decimal"' : ""}>`;
+    }
+    return h + "</div>";
+  }
+  function openNew() {
+    const bg = openModal("Yeni ilan", `<div class="fgrid">${NEW_FIELDS.map((k) => newFieldHTML(byKey(k))).join("")}</div>`, {
+      wide: true,
+      foot: `<button class="btn" id="nw-no">Vazgeç</button><button class="btn primary" id="nw-ok">Kaydet</button>`
+    });
+    // fgrid stilleri çekmecede tanımlı; modalda da çalışır (genel sınıf)
+    $("#nw-no", bg).onclick = closeModal;
+    $("#nw-ok", bg).onclick = async () => {
+      const fields = {};
+      $$("[data-nk]", bg).forEach((el) => { if (el.value !== "") fields[el.dataset.nk] = el.value; });
+      if (!Object.keys(fields).length) { toast("En az bir alan doldurun", "err"); return; }
+      try {
+        const d = await api("/api/records", { method: "POST", body: JSON.stringify({ fields }) });
+        closeModal(); toast("İlan oluşturuldu", "ok");
+        S.page = 1; await load(); refreshStats(); Detail.open(d.id);
+      } catch (e) { toast(e.message, "err"); }
+    };
+  }
+
+  /* ---- Excel senkronu ---- */
+  function openSync() {
+    const last = lastSync
+      ? `Son senkron: <b>${esc(fmtDate(lastSync.at))}</b> — ${lastSync.added} yeni, ${lastSync.updated_rows} güncellenen (${lastSync.updated_cells} hücre), ${lastSync.deleted} silinmiş.`
+      : "Henüz senkron yapılmadı.";
+    const bg = openModal("Excel'den güncelle", `
+      <p style="margin-top:0">${last}</p>
+      <p style="color:var(--muted);font-size:13px">Excel dosyası ID bazında eşleştirilip karşılaştırılır:</p>
+      <ul style="color:var(--muted);font-size:13px;margin-top:0">
+        <li>Değişen hücreler güncellenir, her biri <b>revizyona</b> işlenir</li>
+        <li>Yeni satırlar eklenir, Excel'den silinenler işaretlenir (veriniz silinmez)</li>
+        <li>Sizin elle değiştirdiğiniz hücreler <b>ezilmez</b>, çakışma olarak listelenir</li>
+        <li>Not, görev ve etiketleriniz <b>korunur</b></li>
+      </ul>`, {
+      foot: `<button class="btn" id="sy-no">Vazgeç</button><button class="btn primary" id="sy-ok">Senkronu başlat</button>`
+    });
+    $("#sy-no", bg).onclick = closeModal;
+    $("#sy-ok", bg).onclick = async () => {
+      $("#sy-ok", bg).disabled = true; $("#sy-ok", bg).textContent = "Senkron yapılıyor…";
+      try {
+        const d = await api("/api/sync", { method: "POST" });
+        lastSync = d;
+        closeModal();
+        const conf = (d.conflicts && d.conflicts.length)
+          ? `<h4 style="margin:14px 0 8px">Çakışmalar — sizin değeriniz korundu (${d.conflict_count})</h4>
+            <div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+            ${d.conflicts.map((cf) => `<div style="padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px">
+              <span data-cgoto="${cf.record_id}" style="color:var(--brand);cursor:pointer;font-weight:600">${esc(cf.label)}</span>
+              <span style="color:var(--muted)"> · ${esc(cf.col)}</span><br>
+              uygulamada: <b>${esc(cf.app_value ?? "—")}</b> · excel'de: <b style="color:var(--warn)">${esc(cf.excel_value ?? "—")}</b></div>`).join("")}</div>
+            <p style="color:var(--muted);font-size:12px">Excel'deki değeri almak isterseniz kaydı açıp elle düzenleyin.</p>` : "";
+        const rep = openModal("Senkron tamamlandı", `
+          <div class="hbars">
+            <div class="hbar"><div class="top"><span>Yeni kayıt</span><b>${d.added}</b></div></div>
+            <div class="hbar"><div class="top"><span>Güncellenen kayıt</span><b>${d.updated_rows}</b></div></div>
+            <div class="hbar"><div class="top"><span>Değişen hücre</span><b>${d.updated_cells}</b></div></div>
+            <div class="hbar"><div class="top"><span>Excel'de silinmiş</span><b>${d.deleted}</b></div></div>
+            <div class="hbar"><div class="top"><span>Çakışma</span><b>${d.conflict_count || 0}</b></div></div>
+            <div class="hbar"><div class="top"><span>Toplam kayıt</span><b>${d.total.toLocaleString("tr-TR")}</b></div></div>
+          </div>${conf}`, { wide: true, foot: `<button class="btn primary" id="sy-done">Tamam</button>` });
+        $("#sy-done", rep).onclick = closeModal;
+        $$("[data-cgoto]", rep).forEach((x) => x.onclick = () => { closeModal(); Detail.open(+x.dataset.cgoto); });
+        S.page = 1; S.selected.clear(); load(); refreshStats();
+      } catch (e) {
+        closeModal(); toast(e.message, "err");
+      }
     };
   }
 
@@ -306,10 +447,12 @@ const Records = (() => {
     el.innerHTML = `
       <div class="page-head"><div><h1>Kayıtlar</h1><div class="sub">Filtrele, sırala, seç, düzenle — değişiklikler revizyonlu kaydedilir</div></div>
         <div class="head-actions">
+          <button class="btn primary" id="btn-new">${icon("plus")}<span>Yeni İlan</span></button>
+          <button class="btn" id="btn-sync">${icon("layers")}<span>Excel'den Güncelle</span></button>
           <button class="btn" id="btn-saveview">${icon("save")}<span>Görünümü kaydet</span></button>
           <button class="btn" id="btn-density">${icon("table")}<span>Sıkışık</span></button>
           <button class="btn" id="btn-cols">${icon("cols")}<span>Sütunlar</span></button>
-          <button class="btn primary" id="btn-exp">${icon("download")}<span>Dışa Aktar</span></button>
+          <button class="btn" id="btn-exp">${icon("download")}<span>Dışa Aktar</span></button>
         </div></div>
       <div class="agg-strip" id="agg-strip"></div>
       <div class="card table-card">
@@ -328,9 +471,12 @@ const Records = (() => {
           </select></label>
         </div>
       </div>`;
+    hydrateIcons(el);
     const pp = $("#perpage"); pp.value = String(S.per);
     pp.onchange = () => { S.per = +pp.value; S.page = 1; load(); };
     $("#rq").oninput = debounce((e) => { S.q = e.target.value.trim(); S.page = 1; S.selected.clear(); load(); }, 350);
+    $("#btn-new").onclick = openNew;
+    $("#btn-sync").onclick = openSync;
     $("#btn-cols").onclick = openCols;
     $("#btn-exp").onclick = openExport;
     $("#btn-saveview").onclick = saveView;
@@ -342,11 +488,12 @@ const Records = (() => {
       try { localStorage.setItem("emlak-density", document.body.classList.contains("compact") ? "compact" : "cozy"); } catch (e) {}
       paintDensity();
     };
+    try { lastSync = await api("/api/sync/status"); } catch (e) { lastSync = null; }
     renderHead();
     await load();
   }
 
-  function bind() { /* görünüm ilk açılışta render edilir */ }
+  function bind() {}
   function refreshIfActive() { if (currentView === "records" && $("#grid-body")) load(); }
 
   return { render, bind, openExport, applyView, clearAll: () => { clearFilters(); load(); }, refreshIfActive, state: S };

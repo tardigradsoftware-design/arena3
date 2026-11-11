@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 import sys
+import urllib.parse
 from datetime import datetime
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -15,6 +16,7 @@ from flask import Flask, Response, jsonify, render_template, request
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 DB = os.environ.get("DATA_DB", os.path.join(BASE, "data", "app.db"))
+XLSX = os.environ.get("DATA_XLSX", os.path.join(BASE, "..", "TÜMÜ-revize.xlsx"))
 N_COLS = 47
 KEY_RE = re.compile(r"^c([0-9]|[1-3][0-9]|4[0-6])$")
 
@@ -36,6 +38,23 @@ def cn():
     c = sqlite3.connect(DB)
     c.row_factory = sqlite3.Row
     return c
+
+
+def ensure_schema():
+    """Eski veri tabanlarını yeni şemaya taşır."""
+    c = cn()
+    cols = [r[1] for r in c.execute("PRAGMA table_info(records)").fetchall()]
+    if "sync_state" not in cols:
+        c.execute("ALTER TABLE records ADD COLUMN sync_state TEXT DEFAULT 'active'")
+        c.execute("UPDATE records SET sync_state = 'active'")
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_log (id INTEGER PRIMARY KEY, at TEXT,
+        added INTEGER, updated_rows INTEGER, updated_cells INTEGER, deleted INTEGER)""")
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS ix_rec_rowno ON records(row_no)")
+    except sqlite3.OperationalError:
+        pass
+    c.commit()
+    c.close()
 
 
 _meta = None
@@ -136,6 +155,62 @@ def index():
     return render_template("index.html")
 
 
+def fmt_money_tr(v):
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return None
+    s = f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if s.endswith(",00"):
+        s = s[:-3]
+    return s + " ₺"
+
+
+@app.get("/ilan/<int:rid>")
+def ilan(rid):
+    c = cn()
+    r = c.execute("SELECT * FROM records WHERE id = ?", (rid,)).fetchone()
+    c.close()
+    if not r:
+        return "Kayıt bulunamadı", 404
+    rec = {f"c{i}": r[f"c{i}"] for i in range(N_COLS)}
+    rec["c0"], rec["c1"] = r["c0"], r["c1"]
+    facts = []
+    for key, label in [("c5", "Tür"), ("c33", "Oda"), ("c3", "Metrekare"), ("c6", "Kat"),
+                       ("c25", "Blok"), ("c21", "Proje"), ("c34", "Cephe"), ("c10", "Kullanım"),
+                       ("c32", "Para birimi"), ("c11", "Yıllık kira"), ("c15", "Peşinat"),
+                       ("c19", "Kapora"), ("c12", "Mahalle"), ("c16", "Cadde"), ("c8", "İlçe"), ("c4", "İl")]:
+        v = rec.get(key)
+        if v and v not in ("Seçiniz", "default"):
+            if key in ("c11", "c15", "c19") and v != "0":
+                v = fmt_money_tr(v) or v
+            facts.append((by_key(key)["title"], v))
+    per_m2 = None
+    try:
+        if rec.get("c23") and rec.get("c3") and float(rec["c3"]):
+            per_m2 = fmt_money_tr(float(rec["c23"]) / float(rec["c3"]))
+    except (ValueError, ZeroDivisionError):
+        pass
+    addr = ", ".join(x for x in [rec.get("c16"), rec.get("c12"), f"{rec.get('c8') or ''}/{rec.get('c4') or ''}".strip("/")]
+                     if x and x not in ("Seçiniz", "default"))
+    maps_q = urllib.parse.quote_plus(" ".join(x for x in
+        [rec.get("c1"), rec.get("c16"), rec.get("c12"), rec.get("c8"), rec.get("c4")] if x))
+    tel = re.sub(r"\D", "", rec.get("c17") or "")
+    if tel.startswith("0"):
+        tel = "+9" + tel
+    elif tel and not tel.startswith("90"):
+        tel = "+90" + tel
+    else:
+        tel = "+" + tel if tel else ""
+    return render_template("ilan.html", r=rec, id=rid, facts=facts,
+                           sale=fmt_money_tr(rec.get("c23")) if rec.get("c23") else None,
+                           rent=fmt_money_tr(rec.get("c7")) if rec.get("c7") else None,
+                           per_m2=per_m2, addr=addr or "—",
+                           maps_url=f"https://www.google.com/maps/search/?api=1&query={maps_q}",
+                           tel=f"tel:{tel}" if tel else "",
+                           today=datetime.now().strftime("%d.%m.%Y"))
+
+
 # ---------------- okuma ----------------
 @app.get("/api/columns")
 def api_columns():
@@ -155,7 +230,7 @@ def api_records():
     c = cn()
     total = c.execute(f"SELECT COUNT(*) FROM records r {where}", params).fetchone()[0]
     keys = ",".join(f"r.c{i}" for i in range(N_COLS))
-    rows = c.execute(f"""SELECT r.id, r.row_no, {keys} FROM records r {where}
+    rows = c.execute(f"""SELECT r.id, r.row_no, r.sync_state, {keys} FROM records r {where}
                          ORDER BY {order} LIMIT ? OFFSET ?""",
                      params + [per, (page - 1) * per]).fetchall()
     ids = [r["id"] for r in rows]
@@ -164,7 +239,7 @@ def api_records():
     c.close()
     out = []
     for r in rows:
-        d = {"id": r["id"], "row_no": r["row_no"]}
+        d = {"id": r["id"], "row_no": r["row_no"], "sync_state": r["sync_state"]}
         for i in range(N_COLS):
             d[f"c{i}"] = r[f"c{i}"]
         d["tags"] = tags[r["id"]]
@@ -179,6 +254,8 @@ def api_records():
 def api_stats():
     c = cn()
     total = c.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+    manual = c.execute("SELECT COUNT(*) FROM records WHERE sync_state = 'manual'").fetchone()[0]
+    deleted = c.execute("SELECT COUNT(*) FROM records WHERE sync_state = 'deleted'").fetchone()[0]
     by_status = [{"v": r["v"], "n": r["n"]} for r in
                  c.execute("SELECT c9 v, COUNT(*) n FROM records GROUP BY c9 ORDER BY n DESC")]
     by_type = [{"v": r["v"], "n": r["n"]} for r in
@@ -201,14 +278,17 @@ def api_stats():
             c.execute("""SELECT t.id, t.name, t.color, COUNT(rt.record_id) n FROM tags t
                          LEFT JOIN record_tags rt ON rt.tag_id = t.id
                          GROUP BY t.id ORDER BY t.name""")]
+    last_sync = c.execute("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1").fetchone()
     c.close()
-    return jsonify({"total": total, "by_status": by_status, "by_type": by_type,
+    return jsonify({"total": total, "manual": manual, "deleted": deleted,
+                    "by_status": by_status, "by_type": by_type,
                     "by_project": by_project, "by_room": by_room,
                     "sale_count": sale["cnt"], "sale_total": sale["s"], "sale_avg": sale["a"],
                     "rent_count": rent["cnt"], "rent_avg": rent["a"],
                     "open_tasks": open_tasks, "tasks_overdue": tasks_overdue,
                     "tasks_today": tasks_today, "tasks_week": tasks_week,
-                    "notes_total": notes_total, "rev_total": rev_total, "tags": tags})
+                    "notes_total": notes_total, "rev_total": rev_total, "tags": tags,
+                    "last_sync": dict(last_sync) if last_sync else None})
 
 
 @app.get("/api/aggregate")
@@ -261,7 +341,7 @@ def api_detail(rid):
     if not r:
         c.close()
         return jsonify({"error": "kayıt bulunamadı"}), 404
-    rec = {"id": r["id"], "row_no": r["row_no"]}
+    rec = {"id": r["id"], "row_no": r["row_no"], "sync_state": r["sync_state"]}
     for i in range(N_COLS):
         rec[f"c{i}"] = r[f"c{i}"]
     notes = [dict(x) for x in c.execute(
@@ -277,7 +357,7 @@ def api_detail(rid):
     return jsonify({"record": rec, "notes": notes, "tasks": tasks, "tags": tags, "revisions": revs})
 
 
-# ---------------- güncelleme (revizyonlu) ----------------
+# ---------------- değer hazırlama ----------------
 def parse_tr_number(s):
     s = (s or "").strip().replace(" ", "").replace("\u00a0", "")
     if not s:
@@ -314,6 +394,58 @@ def parse_tr_date(s):
     return s, None
 
 
+def coerce(col_meta, raw):
+    """Ham girdi -> (metin, sayısal, normalize) üçlüsü."""
+    new = ("" if raw is None else str(raw)).strip() or None
+    if new is None:
+        return None, None, None
+    if col_meta["dtype"] == "number":
+        num, _ = parse_tr_number(new)
+        if num is not None:
+            new = str(int(num)) if float(num).is_integer() else str(num)
+        return new, num, None
+    if col_meta["dtype"] == "date":
+        canon, ts = parse_tr_date(new)
+        return canon, ts, tr_lower(canon)
+    return new, None, tr_lower(new)
+
+
+def build_search(cs):
+    return " ".join(tr_lower(s) for s in cs if s)
+
+
+# ---------------- oluşturma / güncelleme ----------------
+@app.post("/api/records")
+def api_create():
+    body = request.get_json(force=True, silent=True) or {}
+    fields = body.get("fields", {})
+    if not isinstance(fields, dict):
+        return jsonify({"error": "fields geçersiz"}), 400
+    cs = [None] * N_COLS
+    ns = [None] * N_COLS
+    ts = [None] * N_COLS
+    for k, v in fields.items():
+        if not KEY_RE.match(k):
+            continue
+        m = by_key(k)
+        cval, nval, tval = coerce(m, v)
+        i = int(k[1:])
+        cs[i], ns[i], ts[i] = cval, nval, tval
+    if not any(x is not None for x in cs):
+        return jsonify({"error": "en az bir alan doldurun"}), 400
+    c = cn()
+    cols = ",".join(f"c{i}" for i in range(N_COLS))
+    nums = ",".join(f"n{i}" for i in range(N_COLS))
+    txts = ",".join(f"t{i}" for i in range(N_COLS))
+    cur = c.execute(f"""INSERT INTO records (row_no, {cols}, {nums}, {txts}, search, sync_state)
+        VALUES ({','.join('?' for _ in range(3 + 3 * N_COLS))})""",
+        [None] + cs + ns + ts + [build_search(cs), "manual"])
+    nid = cur.lastrowid
+    c.commit()
+    c.close()
+    return jsonify({"ok": True, "id": nid}), 201
+
+
 @app.put("/api/records/<int:rid>")
 def api_update(rid):
     body = request.get_json(force=True, silent=True) or {}
@@ -332,35 +464,20 @@ def api_update(rid):
         if not KEY_RE.match(k):
             continue
         m = by_key(k)
-        new = ("" if v is None else str(v)).strip() or None
+        new, num, tnorm = coerce(m, v)
         old = r[k]
         if (old or None) == new:
             continue
         idx = k[1:]
-        if m["dtype"] == "number" and new is not None:
-            num, _ = parse_tr_number(new)
-            if num is not None:
-                new = str(int(num)) if float(num).is_integer() else str(num)
-            else:
-                num = None
-            sets += [f"c{idx} = ?", f"n{idx} = ?", f"t{idx} = NULL"]
-            params += [new, num]
-        elif m["dtype"] == "date" and new is not None:
-            canon, ts = parse_tr_date(new)
-            sets += [f"c{idx} = ?", f"n{idx} = ?", f"t{idx} = ?"]
-            params += [canon, ts, tr_lower(canon)]
-            new = canon
-        else:
-            sets += [f"c{idx} = ?", f"n{idx} = NULL", f"t{idx} = ?"]
-            params += [new, tr_lower(new) if new else None]
+        sets += [f"c{idx} = ?", f"n{idx} = ?", f"t{idx} = ?"]
+        params += [new, num if m["dtype"] in ("number", "date") else None, tnorm]
         changed.append({"key": k, "title": m["title"], "old": old, "new": new})
     if changed:
         cur = dict(r)
         for ch in changed:
             cur[ch["key"]] = ch["new"]
-        search = " ".join(tr_lower(cur[f"c{i}"]) for i in range(N_COLS) if cur[f"c{i}"])
         sets.append("search = ?")
-        params.append(search)
+        params.append(build_search([cur[f"c{i}"] for i in range(N_COLS)]))
         params.append(rid)
         c.execute(f"UPDATE records SET {', '.join(sets)} WHERE id = ?", params)
         for ch in changed:
@@ -370,6 +487,120 @@ def api_update(rid):
         c.commit()
     c.close()
     return jsonify({"ok": True, "changed": changed})
+
+
+# ---------------- Excel senkronu ----------------
+@app.get("/api/sync/status")
+def api_sync_status():
+    ensure_schema()
+    c = cn()
+    row = c.execute("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1").fetchone()
+    c.close()
+    return jsonify(dict(row) if row else None)
+
+
+@app.post("/api/sync")
+def api_sync():
+    ensure_schema()
+    import import_data
+    try:
+        titles, rows, dtypes = import_data.parse_workbook(XLSX)[:3]
+    except FileNotFoundError:
+        return jsonify({"error": f"Excel bulunamadı: {XLSX}"}), 400
+    stored_dtypes = [by_key(f"c{i}")["dtype"] for i in range(N_COLS)]
+    c = cn()
+    keys = ",".join(f"c{i}" for i in range(N_COLS))
+    db_rows, db_by_id, db_by_row = {}, {}, {}
+    for r in c.execute(f"SELECT id, row_no, sync_state, {keys} FROM records WHERE row_no IS NOT NULL"):
+        db_rows[r["id"]] = r
+        db_by_row[r["row_no"]] = r["id"]
+        if r["c0"]:
+            db_by_id.setdefault(r["c0"], []).append(r["id"])
+    xl = []
+    for idx, out in enumerate(rows):
+        cs, ns, ts, search = import_data.row_values(out, stored_dtypes)
+        xl.append({"row_no": idx + 2, "cs": cs, "ns": ns, "ts": ts, "search": search})
+    xl_by_id = {}
+    for j, x in enumerate(xl):
+        if x["cs"][0]:
+            xl_by_id.setdefault(x["cs"][0], []).append(j)
+    pairs, used_db, used_xl = [], set(), set()
+    # 1. geç: ID eşleşmesi (tekrarlı ID'lerde sırayla eşle, kaymalara dayanıklı)
+    for ident, js in xl_by_id.items():
+        for did, j in zip(db_by_id.get(ident, []), js):
+            pairs.append((did, j))
+            used_db.add(did)
+            used_xl.add(j)
+    # 2. geç: ID'siz satırlarda satır no eşleşmesi
+    for j, x in enumerate(xl):
+        if j in used_xl or x["cs"][0]:
+            continue
+        did = db_by_row.get(x["row_no"])
+        if did is not None and did not in used_db and not db_rows[did]["c0"]:
+            pairs.append((did, j))
+            used_db.add(did)
+            used_xl.add(j)
+    # kullanıcının elle değiştirdiği hücreler (çakışma adayı, Excel ezemez)
+    user_rev = set((r["record_id"], r["col_key"]) for r in c.execute(
+        "SELECT record_id, col_key FROM revisions WHERE note IS NULL OR note != 'Excel senkronu'"))
+    t = now()
+    added = upd_rows = upd_cells = conflict_n = 0
+    conflicts = []
+    cols = ",".join(f"c{i}" for i in range(N_COLS))
+    nums = ",".join(f"n{i}" for i in range(N_COLS))
+    txts = ",".join(f"t{i}" for i in range(N_COLS))
+    for did, j in pairs:
+        old = db_rows[did]
+        x = xl[j]
+        cs, ns, ts = x["cs"], x["ns"], x["ts"]
+        diffs = [(i, old[f"c{i}"], cs[i]) for i in range(N_COLS) if (old[f"c{i}"] or None) != cs[i]]
+        apply = [(i, o, n) for i, o, n in diffs if (did, f"c{i}") not in user_rev]
+        for i, o, n in diffs:
+            if (did, f"c{i}") in user_rev:
+                conflict_n += 1
+                if len(conflicts) < 50:
+                    m = by_key(f"c{i}")
+                    conflicts.append({"record_id": did, "label": task_label(old),
+                                      "col": m["title"], "app_value": o, "excel_value": n})
+        if not apply:
+            if old["sync_state"] == "deleted" or old["row_no"] != x["row_no"]:
+                c.execute("UPDATE records SET sync_state = 'active', row_no = ? WHERE id = ?",
+                          (x["row_no"], did))
+            continue
+        sets, params = [], []
+        for i, _, new in apply:
+            sets += [f"c{i} = ?", f"n{i} = ?", f"t{i} = ?"]
+            params += [new, ns[i], ts[i]]
+        sets += ["search = ?", "sync_state = 'active'", "row_no = ?"]
+        params += [x["search"], x["row_no"], did]
+        c.execute(f"UPDATE records SET {', '.join(sets)} WHERE id = ?", params)
+        for i, o, n in apply:
+            m = by_key(f"c{i}")
+            c.execute("""INSERT INTO revisions (record_id, col_key, col_title, old_value, new_value, note, changed_at)
+                         VALUES (?,?,?,?,?,?,?)""",
+                      (did, f"c{i}", m["title"], o, n, "Excel senkronu", t))
+        upd_rows += 1
+        upd_cells += len(apply)
+    for j, x in enumerate(xl):
+        if j in used_xl:
+            continue
+        c.execute(f"""INSERT INTO records (row_no, {cols}, {nums}, {txts}, search, sync_state)
+            VALUES ({','.join('?' for _ in range(3 + 3 * N_COLS))})""",
+            [x["row_no"]] + x["cs"] + x["ns"] + x["ts"] + [x["search"], "active"])
+        added += 1
+    deleted = 0
+    for did, r in db_rows.items():
+        if did not in used_db and r["sync_state"] != "deleted":
+            c.execute("UPDATE records SET sync_state = 'deleted' WHERE id = ?", (did,))
+            deleted += 1
+    c.execute("INSERT INTO sync_log (at, added, updated_rows, updated_cells, deleted) VALUES (?,?,?,?,?)",
+              (t, added, upd_rows, upd_cells, deleted))
+    c.commit()
+    total = c.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+    c.close()
+    return jsonify({"ok": True, "at": t, "added": added, "updated_rows": upd_rows,
+                    "updated_cells": upd_cells, "deleted": deleted, "total": total,
+                    "conflict_count": conflict_n, "conflicts": conflicts})
 
 
 # ---------------- notlar ----------------
@@ -396,7 +627,7 @@ def api_note_edit(nid):
     if not text:
         return jsonify({"error": "not boş olamaz"}), 400
     c = cn()
-    if not c.execute("SELECT 1 FROM notes WHERE id = ?", (nid,)).fetchone():
+    if not c.execute("SELECT 1 FROM records WHERE id = ?", (nid,)).fetchone():
         c.close()
         return jsonify({"error": "not bulunamadı"}), 404
     c.execute("UPDATE notes SET text = ? WHERE id = ?", (text, nid))
@@ -583,6 +814,37 @@ def api_bulk_tasks():
     return jsonify({"ok": True, "count": len(ids)})
 
 
+@app.post("/api/bulk/status")
+def api_bulk_status():
+    body = request.get_json(force=True, silent=True) or {}
+    ids = clean_ids(body.get("record_ids"))
+    value = (body.get("value") or "").strip()
+    note = (body.get("note") or "").strip() or "Toplu durum güncelleme"
+    if not ids or len(ids) > 2000:
+        return jsonify({"error": "1-2000 arası kayıt seçin"}), 400
+    if not value or len(value) > 200:
+        return jsonify({"error": "durum değeri geçersiz"}), 400
+    c = cn()
+    keys = ",".join(f"c{i}" for i in range(N_COLS))
+    ph = ",".join("?" for _ in ids)
+    rows = c.execute(f"SELECT id, {keys} FROM records WHERE id IN ({ph})", ids).fetchall()
+    t = now()
+    n = 0
+    for r in rows:
+        if (r["c9"] or None) == value:
+            continue
+        cur = dict(r)
+        cur["c9"] = value
+        c.execute("UPDATE records SET c9 = ?, t9 = ?, search = ? WHERE id = ?",
+                  (value, tr_lower(value), build_search([cur[f"c{i}"] for i in range(N_COLS)]), r["id"]))
+        c.execute("""INSERT INTO revisions (record_id, col_key, col_title, old_value, new_value, note, changed_at)
+                     VALUES (?, 'c9', 'Durumu', ?, ?, ?, ?)""", (r["id"], r["c9"], value, note, t))
+        n += 1
+    c.commit()
+    c.close()
+    return jsonify({"ok": True, "count": n})
+
+
 # ---------------- etiketler ----------------
 @app.get("/api/tags")
 def api_tags():
@@ -743,5 +1005,6 @@ if __name__ == "__main__":
         print(">> veri tabanı yok, aktarım başlatılıyor...")
         import import_data
         import_data.main()
+    ensure_schema()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

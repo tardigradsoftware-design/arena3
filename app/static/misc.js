@@ -57,7 +57,7 @@ Views.dashboard = (() => {
     $("#dash-exp").onclick = () => setView("records").then(() => Records.openExport());
     $$("[data-kpi]", el).forEach((b) => b.onclick = () => setView(b.dataset.kpi));
     $$("[data-st]", el).forEach((b) => b.onclick = () => {
-      Records.state.filters = { c9: b.dataset.st };
+      Records.state.filters = { c9: [b.dataset.st] };
       Records.state.page = 1; Records.state.q = ""; Records.state.tag = "";
       setView("records");
     });

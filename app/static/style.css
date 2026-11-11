@@ -399,3 +399,26 @@ input[type="checkbox"].cb { width: 16px; height: 16px; accent-color: var(--brand
   .kpis { grid-template-columns: 1fr; }
   .cols-grid { grid-template-columns: 1fr; }
 }
+
+/* çoklu seçim */
+.msel-btn {
+  width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); min-width: 90px; max-width: 210px;
+}
+.msel-btn:hover { border-color: var(--brand); }
+.msel-btn.has { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.msel-lbl { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msel-arr { color: var(--faint); font-size: 10px; }
+.msel-panel {
+  position: fixed; z-index: 200; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--shadow-lg); padding: 6px; max-height: 320px; display: flex; flex-direction: column;
+}
+.msel-tools { display: flex; justify-content: space-between; padding: 2px 6px 6px; }
+.msel-tools button { background: none; border: 0; color: var(--brand); font-size: 12px; font-weight: 600; }
+.msel-tools button:hover { text-decoration: underline; }
+.msel-filter { border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; margin: 0 2px 6px; background: var(--input-bg); font-size: 12.5px; }
+.msel-filter:focus { outline: none; border-color: var(--brand); }
+.msel-list { overflow-y: auto; }
+.msel-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+.msel-item:hover { background: var(--card2); }
+.msel-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

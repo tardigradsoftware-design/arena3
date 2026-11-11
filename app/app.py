@@ -87,13 +87,18 @@ def apply_filters(args):
         where.append("r.search LIKE ?")
         params.append(f"%{tr_lower(q)}%")
     for m in meta():
+        if m["filter"]:
+            vals = [v for v in args.getlist("f_" + m["key"]) if v != ""]
+            if not vals:
+                continue
+            ph = ",".join("?" for _ in vals)
+            where.append(f"r.{m['key']} IN ({ph})")
+            params.extend(vals)
+            continue
         v = args.get("f_" + m["key"], "")
         if v is None or v == "":
             continue
-        if m["filter"]:
-            where.append(f"r.{m['key']} = ?")
-            params.append(v)
-        elif m["dtype"] == "number":
+        if m["dtype"] == "number":
             where.append(f"r.{m['key']} LIKE ?")
             params.append(f"%{v}%")
         else:

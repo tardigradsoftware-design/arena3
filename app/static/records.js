@@ -19,9 +19,23 @@ const Records = (() => {
     if (S.tag) p.set("tag", S.tag);
     if (S.openTasks) p.set("open_tasks", "1");
     if (S.hasNotes) p.set("has_notes", "1");
-    for (const [k, v] of Object.entries(S.filters)) if (v !== "") p.set("f_" + k, v);
+    for (const [k, v] of Object.entries(S.filters)) {
+      if (Array.isArray(v)) v.forEach((x) => { if (x !== "") p.append("f_" + k, x); });
+      else if (v !== "") p.set("f_" + k, v);
+    }
     for (const [k, v] of Object.entries(extra)) p.set(k, v);
     return p;
+  }
+  function normFilters(f) {
+    const o = {};
+    for (const [k, v] of Object.entries(f || {})) {
+      const c = byKey(k);
+      if (c && c.filter) {
+        const arr = (Array.isArray(v) ? v : (v !== "" ? [v] : [])).filter((x) => x !== "");
+        if (arr.length) o[k] = arr;
+      } else if (v !== "") o[k] = v;
+    }
+    return o;
   }
 
   function cellHTML(c, v) {
@@ -39,7 +53,82 @@ const Records = (() => {
     return h || '<span class="dim">—</span>';
   }
 
+  /* ---------- çoklu seçim bileşeni ---------- */
+  let openPanel = null;
+  function multiValues(key) {
+    const v = S.filters[key];
+    return Array.isArray(v) ? v : (v ? [v] : []);
+  }
+  function paintMulti(key) {
+    const root = document.querySelector(`[data-mf="${key}"]`);
+    if (!root) return;
+    const vals = multiValues(key);
+    const lbl = root.querySelector(".msel-lbl");
+    const btn = root.querySelector(".msel-btn");
+    if (!vals.length) { lbl.textContent = "Tümü"; btn.classList.remove("has"); btn.title = ""; }
+    else if (vals.length === 1) { lbl.textContent = vals[0]; btn.classList.add("has"); btn.title = vals[0]; }
+    else { lbl.textContent = `${vals.length} seçili`; btn.classList.add("has"); btn.title = vals.join(", "); }
+  }
+  function closeMulti() {
+    if (!openPanel) return;
+    openPanel.el.remove();
+    openPanel = null;
+    document.removeEventListener("mousedown", outsideMulti, true);
+  }
+  function outsideMulti(e) {
+    if (openPanel && !openPanel.el.contains(e.target) && !openPanel.root.contains(e.target)) closeMulti();
+  }
+  function toggleMulti(key) {
+    const root = document.querySelector(`[data-mf="${key}"]`);
+    if (!root) return;
+    if (openPanel && openPanel.key === key) { closeMulti(); return; }
+    closeMulti();
+    const c = byKey(key);
+    const vals = new Set(multiValues(key));
+    const el = document.createElement("div");
+    el.className = "msel-panel";
+    el.innerHTML = `
+      <div class="msel-tools"><button data-msall>Tümü</button><button data-msclear>Temizle</button></div>
+      <input class="msel-filter" placeholder="Ara…" autocomplete="off">
+      <div class="msel-list">${c.filter.map((v) =>
+        `<label class="msel-item" data-val="${esc(v.toLocaleLowerCase("tr"))}"><input type="checkbox" class="cb" data-msval="${esc(v)}"${vals.has(v) ? " checked" : ""}><span>${esc(v)}</span></label>`).join("")}</div>`;
+    document.body.appendChild(el);
+    const r = root.querySelector(".msel-btn").getBoundingClientRect();
+    el.style.minWidth = Math.max(210, r.width) + "px";
+    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 250)) + "px";
+    el.style.top = (r.bottom + 4) + "px";
+    const h = el.offsetHeight;
+    if (r.bottom + 4 + h > window.innerHeight && r.top - 4 - h > 0) el.style.top = (r.top - 4 - h) + "px";
+    openPanel = { key, el, root };
+    document.addEventListener("mousedown", outsideMulti, true);
+    const commit = () => { S.page = 1; S.selected.clear(); paintMulti(key); load(); };
+    $$("[data-msval]", el).forEach((cb) => cb.onchange = () => {
+      const cur = new Set(multiValues(key));
+      if (cb.checked) cur.add(cb.dataset.msval); else cur.delete(cb.dataset.msval);
+      if (cur.size) S.filters[key] = [...cur]; else delete S.filters[key];
+      commit();
+    });
+    $("[data-msall]", el).onclick = () => {
+      S.filters[key] = [...c.filter];
+      $$("[data-msval]", el).forEach((x) => x.checked = true);
+      commit();
+    };
+    $("[data-msclear]", el).onclick = () => {
+      delete S.filters[key];
+      $$("[data-msval]", el).forEach((x) => x.checked = false);
+      commit();
+    };
+    $(".msel-filter", el).oninput = (e) => {
+      const q = e.target.value.toLocaleLowerCase("tr");
+      $$(".msel-item", el).forEach((it) => it.style.display = it.dataset.val.includes(q) ? "" : "none");
+    };
+  }
+  document.addEventListener("scroll", (e) => { if (openPanel && !openPanel.el.contains(e.target)) closeMulti(); }, true);
+  window.addEventListener("resize", () => closeMulti());
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMulti(); });
+
   function renderHead() {
+    closeMulti();
     const cols = visCols();
     let h = `<tr><th style="width:34px"><input type="checkbox" class="cb" id="sel-all" title="Sayfayı seç"></th><th style="min-width:110px">Ek</th>`;
     for (const c of cols) {
@@ -48,12 +137,11 @@ const Records = (() => {
     }
     h += `</tr><tr class="filters"><th></th><th></th>`;
     for (const c of cols) {
-      const cur = S.filters[c.key] ?? "";
       if (c.filter) {
-        h += `<th><select data-f="${c.key}"><option value="">Tümü</option>${c.filter.map((v) =>
-          `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></th>`;
+        h += `<th><div class="msel" data-mf="${c.key}"><button type="button" class="msel-btn"><span class="msel-lbl">Tümü</span><span class="msel-arr">▾</span></button></div></th>`;
       } else {
-        h += `<th><input data-f="${c.key}" value="${esc(cur)}" placeholder="Filtrele…" autocomplete="off"></th>`;
+        const cur = S.filters[c.key] ?? "";
+        h += `<th><input data-f="${c.key}" value="${esc(Array.isArray(cur) ? cur[0] ?? "" : cur)}" placeholder="Filtrele…" autocomplete="off"></th>`;
       }
     }
     $("#grid-head").innerHTML = h + "</tr>";
@@ -64,14 +152,18 @@ const Records = (() => {
       else { S.sort = ""; S.dir = "asc"; }
       S.page = 1; renderHead(); load();
     });
+    $$("#grid-head [data-mf] .msel-btn").forEach((b) => b.onclick = (e) => {
+      e.stopPropagation();
+      toggleMulti(b.closest("[data-mf]").dataset.mf);
+    });
+    cols.forEach((c) => { if (c.filter) paintMulti(c.key); });
     const onF = debounce((el) => {
       if (el.value) S.filters[el.dataset.f] = el.value; else delete S.filters[el.dataset.f];
       S.page = 1; S.selected.clear(); load();
     }, 380);
     $$("#grid-head [data-f]").forEach((el) => {
       el.onclick = (e) => e.stopPropagation();
-      if (el.tagName === "SELECT") el.onchange = () => onF(el);
-      else el.oninput = () => onF(el);
+      el.oninput = () => onF(el);
     });
     const sa = $("#sel-all");
     sa.checked = pageIds.length > 0 && pageIds.every((id) => S.selected.has(id));
@@ -156,6 +248,8 @@ const Records = (() => {
   }
 
   function renderChips() {
+    const box = $("#active-filters");
+    if (!box) return;
     const items = [];
     if (S.q) items.push(["Ara: " + S.q, () => { S.q = ""; const i = $("#rq"); if (i) i.value = ""; }]);
     if (S.tag) items.push(["Etiket: " + S.tag, () => { S.tag = ""; }]);
@@ -163,13 +257,15 @@ const Records = (() => {
     if (S.hasNotes) items.push(["Notlu", () => { S.hasNotes = false; }]);
     for (const [k, v] of Object.entries(S.filters)) {
       const c = COLS.find((x) => x.key === k);
-      items.push([`${c ? c.title : k}: ${v}`, () => {
+      const disp = Array.isArray(v) ? v.join(", ") : v;
+      items.push([`${c ? c.title : k}: ${disp}`, () => {
         delete S.filters[k];
         const el = document.querySelector(`[data-f="${k}"]`); if (el) el.value = "";
+        paintMulti(k);
       }]);
     }
-    $("#active-filters").innerHTML = items.length
-      ? items.map((it, i) => `<span class="chip">${esc(it[0])}<button data-chip="${i}">×</button></span>`).join("") +
+    box.innerHTML = items.length
+      ? items.map((it, i) => `<span class="chip" title="${esc(it[0])}">${esc(it[0].length > 60 ? it[0].slice(0, 60) + "…" : it[0])}<button data-chip="${i}">×</button></span>`).join("") +
         `<button class="chip clear" data-chip="all">Tümünü temizle</button>`
       : "";
     $$("#active-filters [data-chip]").forEach((b) => b.onclick = () => {
@@ -273,7 +369,7 @@ const Records = (() => {
       const ds = await Promise.all(ids.map((id) => api("/api/records/" + id)));
       const recs = ds.map((d) => d.record);
       let h = `<div style="overflow-x:auto"><table class="grid"><thead><tr><th>Alan</th>${recs.map((r) =>
-        `<th><span class="lnk" data-cgoto="${r.id}" style="color:var(--brand);cursor:pointer">#${esc(r.c0 || "?")} — ${esc(r.c1 || "")}</span></th>`).join("")}</tr></thead><tbody>`;
+        `<th><span data-cgoto="${r.id}" style="color:var(--brand);cursor:pointer">#${esc(r.c0 || "?")} — ${esc(r.c1 || "")}</span></th>`).join("")}</tr></thead><tbody>`;
       for (const k of CMP_FIELDS) {
         const c = byKey(k);
         const vals = recs.map((r) => r[k]);
@@ -281,7 +377,6 @@ const Records = (() => {
         h += `<tr${diff ? ' style="background:var(--brand-soft)"' : ""}><td style="color:var(--muted)">${esc(c.title)}</td>${vals.map((v) =>
           `<td>${k === "c9" || k === "c5" || k === "c10" ? pill(v) : fmtVal(c, v)}</td>`).join("")}</tr>`;
       }
-      // m² birim satırları
       const pm = recs.map((r) => {
         const p = parseFloat(r.c23), m2 = parseFloat(r.c3);
         return p > 0 && m2 > 0 ? fmtMoney(p / m2) : "—";
@@ -310,7 +405,6 @@ const Records = (() => {
       wide: true,
       foot: `<button class="btn" id="nw-no">Vazgeç</button><button class="btn primary" id="nw-ok">Kaydet</button>`
     });
-    // fgrid stilleri çekmecede tanımlı; modalda da çalışır (genel sınıf)
     $("#nw-no", bg).onclick = closeModal;
     $("#nw-ok", bg).onclick = async () => {
       const fields = {};
@@ -414,7 +508,7 @@ const Records = (() => {
 
   /* kayıtlı görünümler */
   function snap() {
-    return { q: S.q, filters: { ...S.filters }, tag: S.tag, sort: S.sort, dir: S.dir, openTasks: S.openTasks, hasNotes: S.hasNotes };
+    return { q: S.q, filters: JSON.parse(JSON.stringify(S.filters)), tag: S.tag, sort: S.sort, dir: S.dir, openTasks: S.openTasks, hasNotes: S.hasNotes };
   }
   async function saveView() {
     const name = await promptDlg("Görünüm kaydet", { placeholder: "Örn: Satılık daireler", label: "Görünüm adı (mevcut filtre + sıralama kaydedilir)" });
@@ -428,7 +522,7 @@ const Records = (() => {
   function applyView(v) {
     if (!v) return;
     const s = v.snap || {};
-    S.q = s.q || ""; S.filters = { ...(s.filters || {}) }; S.tag = s.tag || "";
+    S.q = s.q || ""; S.filters = normFilters(s.filters); S.tag = s.tag || "";
     S.sort = s.sort || ""; S.dir = s.dir || "asc";
     S.openTasks = !!s.openTasks; S.hasNotes = !!s.hasNotes;
     S.page = 1; S.selected.clear();

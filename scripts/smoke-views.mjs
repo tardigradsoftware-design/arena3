@@ -55,6 +55,7 @@ const clickNav = (label) => {
 
 const views = [
   ['Bölge Analizi', ['Medyan satış ₺/m²', 'İlçe karşılaştırma tablosu']],
+  ['Portföy Yetkileri', ['Münhasır payı', 'Portföy yetkileri', 'Neden bu modül yasal']],
   ['Uyarı Kuralları', ['Uyarı kuralları', 'Eşleşmeler']],
   ['Veri Merkezi', ['İlan verisi yükle', 'Son yüklemeler']],
   ['Metodoloji', ['Fırsat skoru nasıl hesaplanır?', 'Veri politikası']]

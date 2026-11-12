@@ -3,6 +3,8 @@
 İstanbul odaklı, **açıklanabilir skorlamayla** bölge ve ilan analizi yapan, kendi verinizi (CSV/XML feed) içine alan
 ve **KVKK uyumlu** aday/portföy yönetimi sunan tek dosya tabanlı bir platform.
 
+> Ayrıntılı hukuki/teknik gerekçe: [`docs/05-veri-toplama-sinirlari.md`](docs/05-veri-toplama-sinirlari.md)
+>
 > **Neden "kişisel veri kazıma" değil?** Bölgedeki dairelerin sahiplerinin telefon/adres bilgisini portallardan toplu
 > çekmek KVKK 6698 ve portal kullanım şartlarına aykırıdır. Bu platform bunun yerine **ilan + bölge zekâsı** üretir;
 > kişisel iletişim verisini yalnızca hukuki dayanağı kayıtlı kaynaklardan (kendi formunuz, CRM'iniz, rıza kaydı) kabul eder.
@@ -19,6 +21,7 @@ ve **KVKK uyumlu** aday/portföy yönetimi sunan tek dosya tabanlı bir platform
 | **Bölge analizi** | 18 aylık fiyat endeksi, oda tipi kırılımı, mahalle tablosu, brüt getiri, likidite, 39 ilçe karşılaştırma tablosu |
 | **Veri merkezi** | CSV/TSV/Excel-kopyala ve portal XML feed içe aktarma (otomatik kolon eşleme), dışa aktarma, kaynak durumu |
 | **Uyarı kuralları** | "Kadıköy · satılık · 2+1 · skor ≥ 75 · medyanın %92'sinden ucuz" gibi kurallar; eşleşmeler anlık hesaplanır |
+| **Portföy yetkileri** | Satıcı yetki sözleşmeleri (münhasır / yarı münhasır / açık), komisyon, bitiş takibi ve yenileme uyarıları — yasal kişisel veri girişinin tek kapısı |
 | **KVKK kayıtları** | Hukuki dayanak zorunlu aday kaydı, maskeli telefon, gerekçeli görüntüleme, silme hakkı, denetim kaydı |
 | **Açık veri bağlayıcıları** | İBB CKAN API, OpenStreetMap Overpass, TÜİK yönlendirmesi (internet erişimi olan ortamda canlı) |
 
@@ -96,6 +99,7 @@ Eşikler: **≥80** yüksek · **65–79** iyi · **50–64** normal · **<50** 
 | GET | `/api/compare` | İlçe karşılaştırma tablosu |
 | GET | `/api/geo` | Harita: ilçe balonları, ilan noktaları, POI |
 | GET/POST/PATCH/DELETE | `/api/alerts` | Kural CRUD + `/api/alerts/:id/matches` |
+| GET/POST/PATCH/DELETE | `/api/mandates` | Portföy yetkileri + `/summary`, gerekçeli görüntüleme, anonimleştirme |
 | GET/POST/DELETE | `/api/leads` | KVKK kapılı aday kaydı, gerekçeli görüntüleme, anonimleştirme |
 | POST | `/api/import/csv`, `/api/import/xml`, `/api/import/preview` | İçe aktarma ve kolon eşleme önizlemesi |
 | POST | `/api/sources/:key/sync` | `ibb-open-data` · `osm` · `tuik` |
@@ -122,7 +126,8 @@ Gerçek kullanım için: Veri Merkezi → CSV/XML içe aktarma veya lisanslı po
 3. **Geocoding**: adres → koordinat (Nominatim, 1 istek/sn politikası) + haritada adres arama
 4. **Değerleme modeli**: hedonik regresyon / gradient boosting ile ₺/m² tahmini ve güven aralığı
 5. **Ekip yönetimi**: kullanıcı/rol, ofis bazlı veri izolasyonu, VERBİS envanter dışa aktarımı
-6. **Ekonomik göstergeler**: TCMB EVDS ile konut kredisi faizi, TÜFE, konut fiyat endeksi entegrasyonu
+6. **Gelen talep (inbound) hunisi**: "evimi sat" formu → otomatik rıza kaydı → portföy yetkisine dönüşüm
+7. **Ekonomik göstergeler**: TCMB EVDS ile konut kredisi faizi, TÜFE, konut fiyat endeksi entegrasyonu
 
 ---
 

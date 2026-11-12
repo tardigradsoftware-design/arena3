@@ -5,8 +5,10 @@ import MapView from './views/MapView'
 import DistrictView from './views/DistrictView'
 import DataCenter from './views/DataCenter'
 import Alerts from './views/Alerts'
+import Mandates from './views/Mandates'
 import ListingDrawer from './components/ListingDrawer'
 import {
+  IconHome,
   IconRadar,
   IconMap,
   IconChart,
@@ -19,12 +21,13 @@ import {
   IconTrend
 } from './components/Icons'
 
-type View = 'radar' | 'map' | 'district' | 'data' | 'alerts' | 'method'
+type View = 'radar' | 'map' | 'district' | 'mandates' | 'data' | 'alerts' | 'method'
 
 const TITLES: Record<View, { title: string; sub: string }> = {
   radar: { title: 'Fırsat Radarı', sub: 'İstanbul · skorlanmış portföy ve fiyat anomalileri' },
   map: { title: 'Konum Haritası', sub: 'bölge yoğunluğu, fiyat seviyesi ve yarıçap analizi' },
   district: { title: 'Bölge Analizi', sub: 'ilçe bazında fiyat, getiri, likidite ve karşılaştırma' },
+  mandates: { title: 'Portföy Yetkileri', sub: 'satıcı yetki sözleşmeleri · münhasırlık · süre takibi' },
   data: { title: 'Veri Merkezi', sub: 'içe aktarma, açık veri bağlayıcıları ve KVKK kayıtları' },
   alerts: { title: 'Uyarı Kuralları', sub: 'kriter tutan ilanlar otomatik listelenir' },
   method: { title: 'Metodoloji & Uyum', sub: 'skor formülü, veri kaynakları ve yasal çerçeve' }
@@ -56,6 +59,7 @@ export default function App() {
     { key: 'radar', label: 'Fırsat Radarı', icon: IconRadar, count: meta?.counts?.active },
     { key: 'map', label: 'Konum Haritası', icon: IconMap },
     { key: 'district', label: 'Bölge Analizi', icon: IconChart },
+    { key: 'mandates', label: 'Portföy Yetkileri', icon: IconHome, count: meta?.counts?.mandates },
     { key: 'alerts', label: 'Uyarı Kuralları', icon: IconBell, count: meta?.counts?.alerts },
     { key: 'data', label: 'Veri Merkezi', icon: IconDatabase },
     { key: 'method', label: 'Metodoloji & Uyum', icon: IconShield }
@@ -136,6 +140,7 @@ export default function App() {
           {view === 'district' && (
             <DistrictView district={district} setDistrict={setDistrict} meta={meta} onOpenListing={openListing} />
           )}
+          {view === 'mandates' && <Mandates meta={meta} onDataChanged={loadMeta} />}
           {view === 'alerts' && <Alerts meta={meta} onOpenListing={openListing} />}
           {view === 'data' && <DataCenter meta={meta} onDataChanged={loadMeta} />}
           {view === 'method' && <Methodology />}

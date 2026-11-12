@@ -37,6 +37,7 @@ BölgeRadar bu beş soruyu tek ekranda, tekrar üretilebilir bir skorla yanıtla
 - Fırsat skoru, risk profili, konum profili
 - Harita + yarıçap analizi, bölge analizi, ilçe karşılaştırma
 - Uyarı kuralları, CSV dışa aktarma
+- Portföy yetkileri (münhasırlık, komisyon, bitiş takibi) — yasal kişisel veri kapısı
 - KVKK: hukuki dayanak, maskeleme, gerekçeli görüntüleme, silme, denetim kaydı
 
 ## Kapsam dışı (bilinçli)

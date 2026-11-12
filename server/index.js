@@ -91,7 +91,8 @@ app.get('/api/meta', (req, res) => {
     districts: tableCount('districts'),
     pois: tableCount('pois'),
     alerts: tableCount('alerts'),
-    leads: db.prepare(`SELECT COUNT(*) c FROM leads WHERE deleted_at IS NULL`).get().c
+    leads: db.prepare(`SELECT COUNT(*) c FROM leads WHERE deleted_at IS NULL`).get().c,
+    mandates: db.prepare(`SELECT COUNT(*) c FROM mandates WHERE deleted_at IS NULL AND status='aktif'`).get().c
   }
   res.json({
     demo: getSetting('demo_mode') === '1',
@@ -640,6 +641,135 @@ app.delete('/api/leads/:id', (req, res) => {
     `UPDATE leads SET deleted_at=?, full_name='[silindi]', phone=NULL, email=NULL, notes=NULL, consent_ref=NULL WHERE id=?`
   ).run(nowISO(), Number(req.params.id))
   audit('erase', 'lead', req.params.id, { note: 'KVKK silme talebi uygulandı' })
+  res.json({ ok: true })
+})
+
+/* --------------------------- portföy yetkileri ---------------------------- */
+/*
+ * Kişisel veri burada YALNIZCA sözleşme dayanağıyla işlenir (KVKK m.5/2-c).
+ * Telefon maskeli döner; görüntüleme denetim kaydına yazılır.
+ */
+
+const MANDATE_TYPES = ['munhasir', 'yari_munhasir', 'acik']
+const daysLeft = (iso) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000) : null)
+
+app.get('/api/mandates', (req, res) => {
+  const { status, expiring, q } = req.query
+  let rows = db.prepare(`SELECT * FROM mandates WHERE deleted_at IS NULL ORDER BY ends_at`).all()
+  if (status) rows = rows.filter((r) => r.status === status)
+  if (expiring) {
+    const limit = Number(expiring)
+    rows = rows.filter((r) => r.status === 'aktif' && daysLeft(r.ends_at) != null && daysLeft(r.ends_at) <= limit)
+  }
+  if (q) {
+    const needle = normalizeKey(q)
+    rows = rows.filter((r) => normalizeKey(`${r.owner_name} ${r.district || ''} ${r.neighborhood || ''}`).includes(needle))
+  }
+  res.json(
+    rows.map((r) => ({
+      ...r,
+      phone: maskedPhone(r.phone),
+      phone_masked: true,
+      days_left: daysLeft(r.ends_at),
+      price: r.listing_id ? db.prepare(`SELECT price FROM listings WHERE id=?`).get(r.listing_id)?.price ?? null : null
+    }))
+  )
+})
+
+app.get('/api/mandates/summary', (req, res) => {
+  const rows = db.prepare(`SELECT * FROM mandates WHERE deleted_at IS NULL`).all()
+  const active = rows.filter((r) => r.status === 'aktif')
+  const exclusive = active.filter((r) => r.mandate_type === 'munhasir')
+  const expiring = active.filter((r) => daysLeft(r.ends_at) != null && daysLeft(r.ends_at) <= 30)
+  const commissions = active.map((r) => r.commission_pct).filter((v) => v != null)
+  let portfolioValue = 0
+  for (const m of active) {
+    if (!m.listing_id) continue
+    const l = db.prepare(`SELECT price FROM listings WHERE id=?`).get(m.listing_id)
+    if (l?.price) portfolioValue += l.price
+  }
+  res.json({
+    total: rows.length,
+    active: active.length,
+    exclusive: exclusive.length,
+    exclusive_share: active.length ? Math.round((exclusive.length / active.length) * 100) : 0,
+    expiring_30: expiring.length,
+    expired: rows.filter((r) => r.status === 'aktif' && daysLeft(r.ends_at) != null && daysLeft(r.ends_at) < 0).length,
+    avg_commission: commissions.length
+      ? Math.round((commissions.reduce((a, b) => a + b, 0) / commissions.length) * 10) / 10
+      : null,
+    portfolio_value: portfolioValue
+  })
+})
+
+app.post('/api/mandates', (req, res) => {
+  const b = req.body || {}
+  if (!b.owner_name) return res.status(400).json({ error: 'Satıcı adı gerekli' })
+  if (!MANDATE_TYPES.includes(b.mandate_type))
+    return res.status(422).json({ error: 'Yetki tipi zorunlu: ' + MANDATE_TYPES.join(', ') })
+  if (!b.starts_at || !b.ends_at) return res.status(422).json({ error: 'Başlangıç ve bitiş tarihi gerekli' })
+  if (b.mandate_type === 'munhasir' && !b.doc_ref)
+    return res.status(422).json({ error: 'Münhasır yetkide sözleşme/belge numarası zorunlu' })
+  const ts = nowISO()
+  const info = db
+    .prepare(
+      `INSERT INTO mandates (listing_id, owner_name, phone, email, district, neighborhood, mandate_type, status,
+        commission_pct, starts_at, ends_at, doc_ref, lawful_basis, notes, demo, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`
+    )
+    .run(
+      b.listing_id ? Number(b.listing_id) : null,
+      b.owner_name,
+      b.phone || null,
+      b.email || null,
+      b.district || null,
+      b.neighborhood || null,
+      b.mandate_type,
+      'aktif',
+      b.commission_pct ? Number(b.commission_pct) : null,
+      b.starts_at,
+      b.ends_at,
+      b.doc_ref || null,
+      'sozlesme',
+      b.notes || null,
+      ts,
+      ts
+    )
+  audit('create', 'mandate', info.lastInsertRowid, { mandate_type: b.mandate_type, doc_ref: b.doc_ref || null })
+  res.json({ ok: true, id: Number(info.lastInsertRowid) })
+})
+
+app.patch('/api/mandates/:id', (req, res) => {
+  const id = Number(req.params.id)
+  const row = db.prepare(`SELECT * FROM mandates WHERE id=? AND deleted_at IS NULL`).get(id)
+  if (!row) return res.status(404).json({ error: 'Yetki kaydı bulunamadı' })
+  const b = req.body || {}
+  db.prepare(
+    `UPDATE mandates SET status=?, ends_at=?, commission_pct=?, notes=?, updated_at=? WHERE id=?`
+  ).run(
+    b.status ?? row.status,
+    b.ends_at ?? row.ends_at,
+    b.commission_pct ?? row.commission_pct,
+    b.notes ?? row.notes,
+    nowISO(),
+    id
+  )
+  audit('update', 'mandate', id, { status: b.status ?? row.status })
+  res.json({ ok: true })
+})
+
+app.get('/api/mandates/:id/reveal', (req, res) => {
+  const row = db.prepare(`SELECT * FROM mandates WHERE id=? AND deleted_at IS NULL`).get(Number(req.params.id))
+  if (!row) return res.status(404).json({ error: 'Kayıt bulunamadı' })
+  audit('reveal', 'mandate', row.id, { reason: req.query.reason || 'belirtilmedi' }, req.query.actor || 'kullanici')
+  res.json({ phone: row.phone, email: row.email, owner_name: row.owner_name })
+})
+
+app.delete('/api/mandates/:id', (req, res) => {
+  db.prepare(
+    `UPDATE mandates SET deleted_at=?, owner_name='[silindi]', phone=NULL, email=NULL, notes=NULL, doc_ref=NULL WHERE id=?`
+  ).run(nowISO(), Number(req.params.id))
+  audit('erase', 'mandate', req.params.id, { note: 'KVKK silme talebi uygulandı' })
   res.json({ ok: true })
 })
 

@@ -233,6 +233,37 @@ function refreshBenchmarks() {
   return groups.size
 }
 
+function seedMandates() {
+  const rows = db.prepare(`SELECT id, district, neighborhood, price FROM listings WHERE deal_type='satilik' ORDER BY id LIMIT 6`).all()
+  const names = ['A. Yılmaz', 'M. Demir', 'S. Kaya', 'H. Şahin', 'E. Çelik', 'N. Arslan']
+  const types = ['munhasir', 'yari_munhasir', 'munhasir', 'acik', 'yari_munhasir', 'munhasir']
+  const stmt = db.prepare(`
+    INSERT INTO mandates (listing_id, owner_name, phone, district, neighborhood, mandate_type, status,
+      commission_pct, starts_at, ends_at, doc_ref, lawful_basis, notes, demo, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,'sozlesme',?,1,?,?)`)
+  const ts = nowISO()
+  rows.forEach((r, i) => {
+    const start = isoDaysAgo(90 - i * 7)
+    const endDays = [-8, 12, 45, 180, 24, 300][i] // biri süresi geçmiş, ikisi 30 gün içinde
+    stmt.run(
+      r.id,
+      names[i],
+      `0500 000 00 0${i + 1}`,
+      r.district,
+      r.neighborhood,
+      types[i],
+      'aktif',
+      [2, 2, 3, 1.5, 2, 2.5][i],
+      start,
+      new Date(Date.now() + endDays * 86400000).toISOString(),
+      `DEMO-YTK-${1000 + i}`,
+      'DEMO kayıt — kurgusal satıcı ve örnek telefon',
+      ts,
+      ts
+    )
+  })
+}
+
 function seedSources() {
   const rows = [
     ['demo-seed', 'Demo Veri Seti', 'seed', 'aktif', 'Platform demo amaçlı kurgusal ilanlar. Canlı kullanımda kapatın.', tableCount('listings')],
@@ -270,7 +301,7 @@ function seedAlerts() {
 function run() {
   migrate()
   if (reset) {
-    for (const t of ['price_history', 'listings', 'benchmarks', 'market_index', 'districts', 'pois', 'alerts', 'leads', 'audit_log', 'imports']) {
+    for (const t of ['price_history', 'listings', 'benchmarks', 'market_index', 'districts', 'pois', 'alerts', 'leads', 'mandates', 'audit_log', 'imports']) {
       db.exec(`DELETE FROM ${t}`)
     }
   }
@@ -283,6 +314,7 @@ function run() {
   seedMarketIndex()
   const n = generateListings()
   const groups = refreshBenchmarks()
+  seedMandates()
   seedSources()
   seedAlerts()
   setSetting('demo_mode', '1')

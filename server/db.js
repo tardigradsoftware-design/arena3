@@ -126,6 +126,30 @@ CREATE TABLE IF NOT EXISTS leads (
   deleted_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS mandates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+  owner_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  district TEXT,
+  neighborhood TEXT,
+  mandate_type TEXT NOT NULL,
+  status TEXT DEFAULT 'aktif',
+  commission_pct REAL,
+  starts_at TEXT,
+  ends_at TEXT,
+  doc_ref TEXT,
+  lawful_basis TEXT DEFAULT 'sozlesme',
+  notes TEXT,
+  demo INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mandates_status ON mandates(status);
+CREATE INDEX IF NOT EXISTS idx_mandates_ends ON mandates(ends_at);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor TEXT,

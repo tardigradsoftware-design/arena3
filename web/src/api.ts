@@ -58,6 +58,14 @@ export const api = {
   importXml: (xml: string, fileName = 'feed.xml') =>
     request('/api/import/xml', { method: 'POST', body: JSON.stringify({ xml, sourceKey: 'xml-feed', fileName }) }),
   sync: (key: string) => request(`/api/sources/${key}/sync`, { method: 'POST' }),
+  mandates: (params: Record<string, any> = {}) => request(`/api/mandates${qs(params)}`),
+  mandateSummary: () => request('/api/mandates/summary'),
+  createMandate: (m: any) => request('/api/mandates', { method: 'POST', body: JSON.stringify(m) }),
+  updateMandate: (id: number, patch: any) =>
+    request(`/api/mandates/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  revealMandate: (id: number, reason: string) =>
+    request(`/api/mandates/${id}/reveal?reason=${encodeURIComponent(reason)}`),
+  deleteMandate: (id: number) => request(`/api/mandates/${id}`, { method: 'DELETE' }),
   audit: () => request('/api/audit'),
   sampleCsv: () => fetch('/api/sample-csv').then((r) => r.text())
 }

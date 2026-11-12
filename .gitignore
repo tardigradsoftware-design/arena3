@@ -1,0 +1,11 @@
+node_modules/
+dist/
+server/data/
+*.db
+*.db-wal
+*.db-shm
+.smoke-dom.html
+.DS_Store
+.env
+.env.local
+npm-debug.log*

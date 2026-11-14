@@ -1,0 +1,10 @@
+# git içine alınmayan üretim çıktıları
+out/*.wav
+out/*.png
+assets/bed.wav
+assets/sfx_*.wav
+assets/vo.wav
+assets/vo_raw.mp3
+google_drive/*.ods
+google_drive/yasal_takip*
+__pycache__/

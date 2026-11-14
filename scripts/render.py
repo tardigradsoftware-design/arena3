@@ -14,7 +14,7 @@ SR = 44100
 
 # ---------------------------------------------------------------- config
 import json
-CFG = json.load(open(A("out", os.environ.get("VIDEO_CFG", "cfg.json")), encoding="utf-8"))
+CFG = json.load(open(A(os.environ.get("CFG_DIR", "videos"), os.environ.get("VIDEO_CFG", "cfg.json")), encoding="utf-8"))
 HOOK_TITLE = CFG["ekran_yazisi"]
 CTA_WORD = CFG["cta"]
 VO_TEXT = CFG["tts"]
@@ -56,6 +56,9 @@ def build_vo():
 
 
 # ---------------------------------------------------------------- VO timing
+build_vo()  # module level: the timeline constants below depend on it
+
+
 def vo_duration():
     import wave
     w = wave.open(A("assets/vo.wav"))
@@ -127,7 +130,8 @@ def load_shots():
     """Cuts every ~3.4s through the narration; images cycle with varied framing."""
     imgs = []
     for f in SHOT_FILES:
-        im = cover(Image.open(A("assets/v2/broll", f + ".png")).convert("RGB"), int(W * 1.5), int(H * 1.5))
+        img_path = A(CFG.get("broll_dir", "assets/v2/broll"), f + ".png")
+        im = cover(Image.open(img_path).convert("RGB"), int(W * 1.5), int(H * 1.5))
         if f in SHOT_BLUR:  # hide any readable / AI-garbled text in the plate
             im = im.filter(ImageFilter.GaussianBlur(SHOT_BLUR[f]))
         imgs.append(im)
@@ -279,6 +283,7 @@ def draw_hook(img, draw, t):
 
 
 def draw_captions(img, draw, t):
+    """Karaoke captions, just below frame centre, yellow highlight on the spoken word."""
     if t < CAP_START or t > CTA_START:
         return
     page = None
@@ -293,32 +298,36 @@ def draw_captions(img, draw, t):
         if t >= w[1] - 0.02:
             active = i
     words = [w[0] for w in page]
+
+    # shrink the type until the block fits comfortably on one phone screen
     size = 82 if len(words) <= 3 else 74
+    while size > 46:
+        f = F(900, size)
+        lines = wrap_words(words, f, W - 240, draw)
+        if len(lines) * size * 1.16 <= 420:
+            break
+        size -= 6
     f = F(900, size)
-    lines = wrap_words(words, f, W - 220, draw)
-    # map word index -> (line, idx)
+    lines = wrap_words(words, f, W - 240, draw)
+
     pos, i = {}, 0
     for li, line in enumerate(lines):
         for wi in range(len(line.split(" "))):
             pos[i] = (li, wi)
             i += 1
     colors = {pos[active]: YELLOW} if active in pos else {}
-    # measured caption centre: slightly below the middle of the frame
+
     cy = 1420
     line_h = size * 1.16 * len(lines)
     plate_h = line_h + 90
-    plate = Image.new("RGBA", (W, int(plate_h)), (0, 0, 0, 0))
-    ImageDraw.Draw(plate).rounded_rectangle([70, 0, W - 70, plate_h], radius=34, fill=(6, 8, 13, 132))
-    img.paste(Image.alpha_composite(
-        img.crop((0, int(cy - plate_h / 2), W, int(cy - plate_h / 2 + plate_h))).convert("RGBA"),
-        plate).convert("RGB"), (0, int(cy - plate_h / 2)))
+
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
+    top = cy - plate_h / 2
+    ld.rounded_rectangle([70, top, W - 70, top + plate_h], radius=34, fill=(6, 8, 13, 132))
     text_block(ld, lines, f, W / 2, cy, fill=WHITE, stroke=7, word_colors=colors, line_gap=1.16)
-    img.paste(layer, (0, 0), layer)
+    img.paste(Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB"), (0, 0))
 
-
-STEP_WINDOW = (0.0, 0.0)
 
 def draw_steps_card(img, draw, t):
     """Optional motion-graphics step card over the mid b-roll."""
@@ -453,19 +462,18 @@ def mix_audio(path):
 
 # ---------------------------------------------------------------- main
 def main():
-    build_vo()
     import imageio_ffmpeg
     ff = imageio_ffmpeg.get_ffmpeg_exe()
-    os.makedirs(A("out"), exist_ok=True)
+    os.makedirs(A("videos"), exist_ok=True)
     load_shots()
     global STEP_WINDOW
     if CFG.get("steps"):
         mid = CUTS[len(CUTS) // 2] if CUTS else 0.0
         STEP_WINDOW = (mid, mid + float(CFG.get("cut_every", 3.4)) * 1.0)
-    wav = A("out", "mix.wav")
+    wav = A("videos", "mix.wav")
     mix_audio(wav)
 
-    mp4 = A("out", f"{OUT_NAME}.mp4")
+    mp4 = A("videos", f"{OUT_NAME}.mp4")
     cmd = [ff, "-hide_banner", "-loglevel", "error", "-y",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", wav,

@@ -1,0 +1,30 @@
+{
+ "id": "1",
+ "kategori": "E-Devlet",
+ "cta": "PARA",
+ "ekran_yazisi": "Unutulan Paranı Al!",
+ "hook": "Bankaların sizden sakladığı unutulmuş paralarınız olabilir!",
+ "ozet": "Adım 1: e-Devlet'e girin. Adım 2: Takasbank Bireysel Emeklilik ve Unutulan Tutarlar yazın. Adım 3: IBAN bilginizi girip iade talebi oluşturun.",
+ "tts": "Bankaların ve kurumların sizden sakladığı unutulmuş paralarınız olabilir! Geçmişte girdiğiniz bir iş yerinde adınıza otomatik açılan bireysel emeklilik kesintileri, kapattığınızı sandığınız eski banka hesaplarındaki bakiyeler veya adınıza yatmış kurum iadeleri şu an Takasbank sisteminde bekliyor olabilir. Üstelik bu paralar zaman aşımına uğrayıp devlete geçmeden önce tek tıkla kontrol etme şansınız var. Hemen e-Devlet'e girip arama kısmına Takasbank yazarak adınıza biriken tutarları görebilir ve doğrudan kendi IBAN numaranıza aktarabilirsiniz. Hangi menüye gireceğinizi ve parayı hesabınıza çekme adımlarını resimli olarak görmek için yoruma PARA yazın, rehberi hemen göndereyim.",
+ "kicker": "e-DEVLET  •  TAKASBANK",
+ "images": [
+  "para_1",
+  "para_2",
+  "para_3",
+  "para_4"
+ ],
+ "blur": {
+  "para_1": 2.0,
+  "para_3": 3.2
+ },
+ "steps": [
+  "e-Devlet > Arama > \"Takasbank\"",
+  "Birikmiş tutarları listele",
+  "Kendi IBAN'ına aktar"
+ ],
+ "cta_note": "Resimli rehber + başvuru adımları",
+ "vo_src": "assets/v3/vo_para.mp3",
+ "out": "1_PARA",
+ "cut_every": 3.6,
+ "broll_dir": "assets/v3/broll"
+}

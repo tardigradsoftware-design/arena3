@@ -80,3 +80,42 @@ python3 scripts/render.py
 
 Yeni bir satır için `scripts/render.py` içindeki `HOOK_TITLE`, `CTA_WORD`, `VO_TEXT` ve
 `assets/broll/*` değerlerini tablodaki satırla değiştirin.
+
+---
+
+# Senaryo Seti v3 (aktif) — 2026-11-14
+
+Kaynak: `scripts/scenarios_v3.json` (10 satır, tablo alanlarıyla birebir).
+Üretim çıktıları artık `videos/` altında tutulur ( `out/` snapshot dışında kaldığı için taşındı).
+
+| # | Kategori | Ekran Yazısı | CTA | Durum |
+|---|----------|--------------|-----|-------|
+| 1 | E-Devlet | Unutulan Paranı Al! | PARA | **Hazır** |
+| 2 | E-Devlet | Adına Şirket Açılmasın! | KISIT | Bekliyor |
+| 3 | Hukuk | Ev Sahibi Çıkaramaz! | KİRACI | Bekliyor |
+| 4 | Tüketici | Kart Aidatını Geri Al! | AİDAT | Bekliyor |
+| 5 | Destek | Günlük Nakit Desteği! | İŞKUR | Bekliyor |
+| 6 | Hukuk | İstifa Edip Tazminat Al! | İSTİFA | Bekliyor |
+| 7 | E-Devlet | Gizli Mirası Sorgula! | MİRAS | Bekliyor |
+| 8 | Hukuk | Trafik Cezasını İptal Et! | CEZA | Bekliyor |
+| 9 | Tüketici | Koşulsuz İade Hakkın! | İADE | Bekliyor |
+| 10 | E-Devlet | Gizli Hatları Kapat! | HAT | Bekliyor |
+
+Satır 1 (PARA) çıktıları:
+```
+Video:  https://drive.google.com/file/d/1vNoDi2lW6BpzLvOCfy3XNj_Xxcix36WR/view
+Notion: https://app.notion.com/p/Unutulan-Paran-Al-Ad-m-Ad-m-Uygulama-Rehberi-418b6cc8b0d781ab8709cda4d3350fbb
+Takip:  yasal_takip_v3  1gNYW2zPQDWZyIR3Lv6SBAWLDVO9Y2Ff4h-0ma-mjoiQ
+```
+
+## Satır üretimi
+
+```bash
+python3 -m pip install --break-system-packages pillow numpy imageio-ffmpeg
+python3 scripts/audio_build.py
+# videos/cfg_<id>.json hazırla (broll_dir = assets/v3/broll, vo_src = assets/v3/vo_<x>.mp3, out = "<id>_<CTA>")
+VIDEO_CFG=cfg_para.json python3 scripts/render.py   # -> videos/<out>.mp4
+```
+
+`render.py` artık `CFG_DIR` (varsayılan `videos`) ve `broll_dir` alanını destekler; VO,
+zaman çizelgesi sabitlerinden önce modül yüklenirken üretilir.

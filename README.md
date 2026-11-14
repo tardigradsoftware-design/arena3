@@ -135,3 +135,16 @@ VIDEO_CFG=cfg_para_k.json python3 scripts/render_kinetic.py   # -> videos/<out>.
 Config: `cta`, `tts`, `vo_src`, `scenes[]` (tip: hook / ui / receipt / check / stat / cta,
 `dur` veya `weight`, `lines`, `hl`, `card`). Altyazılar TTS metninden otomatik üretilir.
 Örnek: `videos/cfg_para_k.json` (senaryo 1, PARA).
+
+## Editoryal Dosya motoru (özgün kimlik, maskot yok)
+
+`scripts/render_editorial.py` — referans kanalların krem/kırmızı karikatür + maskot
+dilinden bağımsız, kurumsal "dosya" estetiği: koyu mürekkep zemin + ince ızgara,
+Montserrat black tipografi (maske açılımı), DejaVu Mono resmî etiketler,
+kodla çizilen çizgi ikonlar, panel içi arama/döküm/durum düzenleri, sayaçlı tutarlar.
+
+Sahne tipleri: `hook`, `ui`, `receipt`, `steps`, `check`, `warn`, `cta`.
+```bash
+VIDEO_CFG=cfg_para_ed.json python3 scripts/render_editorial.py   # -> videos/<out>.mp4
+```
+Örnek config: `videos/cfg_para_ed.json` (senaryo 1 / PARA).

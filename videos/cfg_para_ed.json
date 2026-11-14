@@ -1,0 +1,125 @@
+{
+ "id": "1",
+ "cta": "PARA",
+ "out": "1_PARA_editoryal",
+ "brand": "DOSYA 01",
+ "handle": "ADIM ADIM REHBER",
+ "tts": "Bankaların ve kurumların sizden sakladığı unutulmuş paralarınız olabilir! Geçmişte girdiğiniz bir iş yerinde adınıza otomatik açılan bireysel emeklilik kesintileri, kapattığınızı sandığınız eski banka hesaplarındaki bakiyeler veya adınıza yatmış kurum iadeleri şu an Takasbank sisteminde bekliyor olabilir. Üstelik bu paralar zaman aşımına uğrayıp devlete geçmeden önce tek tıkla kontrol etme şansınız var. Hemen e-Devlet'e girip arama kısmına Takasbank yazarak adınıza biriken tutarları görebilir ve doğrudan kendi IBAN numaranıza aktarabilirsiniz. Hangi menüye gireceğinizi ve parayı hesabınıza çekme adımlarını resimli olarak görmek için yoruma PARA yazın, rehberi hemen göndereyim.",
+ "vo_src": "assets/v3/vo_para.mp3",
+ "scenes": [
+  {
+   "type": "hook",
+   "dur": 3.2,
+   "label": "E-DEVLET  /  TAKASBANK",
+   "chip": "GİZLİ BİRİKİM",
+   "lines": [
+    "UNUTULAN",
+    "PARAN VAR"
+   ],
+   "hl": [
+    1
+   ],
+   "sub": "Adınıza biriken tutarlar sizi bekliyor",
+   "num": "01"
+  },
+  {
+   "type": "ui",
+   "weight": 1.0,
+   "label": "01  /  SORGULAMA",
+   "lines": [
+    "ÖNCE SORGU"
+   ],
+   "hl": [],
+   "query": "Takasbank",
+   "t_title": "e-DEVLET  /  ARAMA",
+   "t_num": "ADIM 1",
+   "rows": [
+    "BİREYSEL EMEKLİLİK İŞLEMLERİ",
+    "DEVLET KATKISI SORGU",
+    "İADE TALEBİ OLUŞTUR"
+   ]
+  },
+  {
+   "type": "receipt",
+   "weight": 1.0,
+   "label": "02  /  DÖKÜM",
+   "lines": [
+    "NE KADAR",
+    "BİRİKMİŞ"
+   ],
+   "hl": [
+    1
+   ],
+   "t_title": "HESAP DÖKÜMÜ",
+   "rows": [
+    [
+     "2019 BES KESİNTİSİ",
+     2480
+    ],
+    [
+     "2021 KURUM İADESİ",
+     1150
+    ],
+    [
+     "ESKİ HESAP KALANI",
+     860
+    ]
+   ]
+  },
+  {
+   "type": "steps",
+   "weight": 1.05,
+   "label": "03  /  AKTARIM",
+   "lines": [
+    "PARAYI AL"
+   ],
+   "hl": [],
+   "rows": [
+    [
+     "KENDİ IBAN'INI GİR",
+     "Hesap sahibi siz olmalısınız",
+     "id"
+    ],
+    [
+     "İADE TALEBİNİ ONAYLA",
+     "e-Devlet şifresi ile onay",
+     "check"
+    ],
+    [
+     "TRANSFERİ TAKİP ET",
+     "Ortalama 5-15 iş günü",
+     "clock"
+    ]
+   ]
+  },
+  {
+   "type": "warn",
+   "weight": 0.95,
+   "label": "04  /  UYARI",
+   "lines": [
+    "BEKLERSEN",
+    "DEVLETE GEÇER"
+   ],
+   "hl": [
+    1
+   ],
+   "t_title": "ZAMAN AŞIMI",
+   "body": [
+    "Talepte bulunulmazsa bakiyeler",
+    "zaman aşımına düşebilir."
+   ],
+   "foot": "4632 SAYILI KANUN  •  KONTROL SİZE BAĞLI"
+  },
+  {
+   "type": "cta",
+   "word": "PARA",
+   "lines": [
+    "Yoruma PARA yaz,",
+    "rehberi gönderelim"
+   ],
+   "note": "IBAN İADESİ  +  ADIM ADIM REHBER",
+   "brand": "DOSYA 01",
+   "brand2": "e-DEVLET"
+  }
+ ]
+}

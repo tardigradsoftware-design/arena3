@@ -12,11 +12,18 @@ A = lambda *p: os.path.join(ROOT, *p)
 W, H, FPS = 1080, 1920, 30
 SR = 44100
 
-HOOK_TITLE = "Kart Aidatını Geri Al!"
-CTA_WORD = "AİDAT"
-VO_TEXT = ("Bankaların kestiği kredi kartı aidatlarını telefon açıp dilenmeden, e-Devlet üzerinden resmi yolla "
-           "geri alabilirsiniz. Üstelik geriye dönük kesintiler de dahil. Başvuru ekranını ve kopyala yapıştır "
-           "dilekçe metnini almak için yoruma AİDAT yazın.")
+# ---------------------------------------------------------------- config
+import json
+CFG = json.load(open(A("out", os.environ.get("VIDEO_CFG", "cfg.json")), encoding="utf-8"))
+HOOK_TITLE = CFG["ekran_yazisi"]
+CTA_WORD = CFG["cta"]
+VO_TEXT = CFG["tts"]
+KICKER = CFG.get("kicker", "ADIM ADIM REHBER")
+TOP_LABEL = CFG.get("top_label", CFG.get("kategori", "Adım Adım Rehber").upper() if False else "ADIM ADIM REHBER")
+SHOT_FILES = CFG["images"]
+SHOT_BLUR = CFG.get("blur", {})
+VO_SRC = CFG.get("vo_src", "assets/vo.wav")
+OUT_NAME = CFG["out"]
 
 YELLOW = (255, 214, 10)
 WHITE = (255, 255, 255)
@@ -27,6 +34,25 @@ F = lambda w, s: ImageFont.truetype(A("assets/fonts", f"Montserrat-{w}.ttf"), s)
 
 def tr_upper(s):
     return s.replace("i", "İ").replace("ı", "I").upper()
+
+
+# ---------------------------------------------------------------- VO build
+def build_vo():
+    """Normalise the TTS take: 1.15x speed, trimmed edges, energetic and even."""
+    import imageio_ffmpeg
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    dst = A("assets/vo.wav")
+    af = ("aresample=44100,"
+          "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.02,"
+          "atempo=1.15,"
+          "areverse,"
+          "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.02,"
+          "areverse,"
+          "dynaudnorm=f=250:g=5:p=0.92,"
+          "highpass=f=95")
+    subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-y", "-i", A(VO_SRC),
+                    "-af", af, "-ac", "1", "-ar", "44100", dst], check=True)
+    return dst
 
 
 # ---------------------------------------------------------------- VO timing
@@ -95,21 +121,28 @@ def cover(img, w, h):
 
 
 SHOTS = []  # (start, end, image, zoom_from, zoom_to, pan)
+CUTS = []   # shot boundary times (seconds)
 
 def load_shots():
-    files = ["s1_scissors", "s2_phone", "s3_edevlet", "s4_money"]
+    """Cuts every ~3.4s through the narration; images cycle with varied framing."""
     imgs = []
-    for f in files:
-        im = cover(Image.open(A("assets/broll", f + ".png")).convert("RGB"), int(W * 1.5), int(H * 1.5))
-        if f == "s3_edevlet":  # shallow-depth-of-field feel; hides unreadable screen text
-            im = im.filter(ImageFilter.GaussianBlur(2.2))
+    for f in SHOT_FILES:
+        im = cover(Image.open(A("assets/v2/broll", f + ".png")).convert("RGB"), int(W * 1.5), int(H * 1.5))
+        if f in SHOT_BLUR:  # hide any readable / AI-garbled text in the plate
+            im = im.filter(ImageFilter.GaussianBlur(SHOT_BLUR[f]))
         imgs.append(im)
-    # shot boundaries: hook, then cuts every ~3.4s, last one runs into CTA
-    cuts = [0.0, 3.3, 6.9, 10.4]
-    bounds = cuts + [TOTAL + 1]
-    pans = [(0, 0), (0.5, -0.3), (-0.4, 0.3), (0.3, 0.2)]
-    for i, im in enumerate(imgs):
-        SHOTS.append((bounds[i], bounds[i + 1], im, 1.03, 1.16, pans[i]))
+    step = float(CFG.get("cut_every", 3.4))
+    CUTS.clear()
+    t = 0.0
+    while t < CTA_START - 1.0:
+        CUTS.append(round(t, 2))
+        t += step
+    bounds = CUTS + [TOTAL + 1]
+    pans = [(0, 0), (0.5, -0.3), (-0.4, 0.3), (0.3, 0.2), (-0.3, -0.25), (0.45, 0.3)]
+    for i in range(len(CUTS)):
+        im = imgs[i % len(imgs)]
+        z0 = 1.02 if i % 2 == 0 else 1.10   # alternate framing so repeats read as new shots
+        SHOTS.append((bounds[i], bounds[i + 1], im, z0, z0 + 0.13, pans[i % len(pans)]))
 
 
 def shot_at(t):
@@ -218,7 +251,7 @@ def draw_hook(img, draw, t):
 
     # kicker
     kf = F(700, 40)
-    kick = "KREDİ KARTI  •  e-DEVLET"
+    kick = KICKER
     tl = draw.textlength(kick, font=kf)
     y0 = 430 + int((1 - k) * -40)
     draw.rounded_rectangle([W / 2 - tl / 2 - 30, y0 - 34, W / 2 + tl / 2 + 30, y0 + 34], radius=34,
@@ -285,16 +318,19 @@ def draw_captions(img, draw, t):
     img.paste(layer, (0, 0), layer)
 
 
+STEP_WINDOW = (0.0, 0.0)
+
 def draw_steps_card(img, draw, t):
-    """Motion-graphics step card while the 'e-Devlet' b-roll plays."""
+    """Optional motion-graphics step card over the mid b-roll."""
+    t0, t1 = STEP_WINDOW
     a = 0.0
-    if 6.9 <= t < 10.4:
-        a = min(1.0, (t - 6.9) / 0.35)
-    elif 10.4 <= t < 10.85:
-        a = max(0.0, 1 - (t - 10.4) / 0.4)
+    if t0 <= t < t1:
+        a = min(1.0, (t - t0) / 0.35)
+    elif t1 <= t < t1 + 0.45:
+        a = max(0.0, 1 - (t - t1) / 0.4)
     if a <= 0:
         return
-    steps = ["e-Devlet > Arama", "TÜBİS / Tüketici Hakem Heyeti", "Başvuru + ekstre belgesi"]
+    steps = CFG.get("steps") or []
     CH = 460
     card = Image.new("RGBA", (W, CH), (0, 0, 0, 0))
     cd = ImageDraw.Draw(card)
@@ -303,8 +339,8 @@ def draw_steps_card(img, draw, t):
     f_small = F(800, 38)
     cd.text((W / 2, 62), "BAŞVURU YOLU", font=f_small, fill=(255, 214, 10), anchor="mm")
     y = 150
-    for i, s in enumerate(steps):
-        if t < 7.15 + i * 0.75:  # staggered reveal
+    for i, s in enumerate(steps):  # noqa: B007
+        if t < t0 + 0.25 + i * 0.75:  # staggered reveal
             break
         cd.ellipse([92, y - 26, 144, y + 26], fill=(255, 214, 10))
         cd.text((118, y), str(i + 1), font=F(800, 34), fill=(10, 10, 10), anchor="mm")
@@ -351,7 +387,7 @@ def draw_cta(img, draw, t):
         y += 112
     # handle note
     f3 = F(700, 40)
-    note = "Kopyala - yapıştır dilekçe + başvuru linki"
+    note = CFG.get("cta_note", "Kopyala - yapıştır dilekçe + başvuru linki")
     ld.text((W / 2, 1400), note, font=f3, fill=(214, 218, 228), anchor="mm")
     if a < 1:
         layer.putalpha(layer.getchannel("A").point(lambda v: int(v * a)))
@@ -365,7 +401,7 @@ def draw_chrome(img, draw, t):
     draw.rectangle([0, 0, int(W * p), 12], fill=YELLOW)
     # top label
     f = F(700, 30)
-    txt = tr_upper("Adım Adım Rehber")
+    txt = TOP_LABEL
     draw.rounded_rectangle([46, 56, 46 + draw.textlength(txt, font=f) + 44, 122], radius=33,
                            fill=(0, 0, 0))
     draw.text((46 + 22, 89), txt, font=f, fill=(235, 235, 245), anchor="lm")
@@ -397,7 +433,7 @@ def mix_audio(path):
     add(A("assets/bed.wav"), 0.0, 0.30)
     add(A("assets/sfx_whoosh.wav"), 0.02, 0.55)
     add(A("assets/sfx_boom.wav"), 0.10, 0.55)
-    for c in (3.3, 6.9, 10.4):
+    for c in CUTS[1:]:
         add(A("assets/sfx_whoosh.wav"), c - 0.28, 0.34)
         add(A("assets/sfx_pop.wav"), c, 0.22)
     add(A("assets/sfx_whoosh.wav"), CTA_START - 0.30, 0.40)
@@ -417,14 +453,19 @@ def mix_audio(path):
 
 # ---------------------------------------------------------------- main
 def main():
+    build_vo()
     import imageio_ffmpeg
     ff = imageio_ffmpeg.get_ffmpeg_exe()
     os.makedirs(A("out"), exist_ok=True)
     load_shots()
+    global STEP_WINDOW
+    if CFG.get("steps"):
+        mid = CUTS[len(CUTS) // 2] if CUTS else 0.0
+        STEP_WINDOW = (mid, mid + float(CFG.get("cut_every", 3.4)) * 1.0)
     wav = A("out", "mix.wav")
     mix_audio(wav)
 
-    mp4 = A("out", f"4_{CTA_WORD}.mp4")
+    mp4 = A("out", f"{OUT_NAME}.mp4")
     cmd = [ff, "-hide_banner", "-loglevel", "error", "-y",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", wav,

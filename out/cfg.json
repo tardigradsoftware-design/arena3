@@ -1,0 +1,22 @@
+{
+ "id": "1",
+ "kategori": "E-Devlet",
+ "cta": "KISIT",
+ "ekran_yazisi": "O Fotokopi Nerede?",
+ "hook": "Üç yıl önce bir otel resepsiyonuna ya da kargo görevlisine uzattığınız o kimlik kartı var ya...",
+ "tts": "Üç yıl önce bir otel resepsiyonuna ya da kargo görevlisine uzattığınız o kimlik kartı var ya... Siz o gün işinizi halledip evinize döndünüz ama kimliğinizin kopyası bambaşka bir masada yeni bir hayata başladı. Bugün binlerce kişi, hiç gitmediği bir şehirde adına açılan şirketlerin borcunu ödüyor. Sizin kimliğinizin şu an nerede kullanıldığını kapatmanın tek bir yolu var. Adımlar için yoruma KISIT yazın.",
+ "ozet": "Adım 1: e-Devlet'te Ortak veya Yetkili Olunmasına Yönelik Kısıtlama İşlemleri. Adım 2: Yeni Başvuru ile T.C. kimlik kısıtlama.",
+ "kicker": "e-DEVLET  •  KİMLİK KISITLAMA",
+ "images": [
+  "kisit_1",
+  "kisit_2",
+  "kisit_3",
+  "kisit_4"
+ ],
+ "blur": {
+  "kisit_2": 2.4,
+  "kisit_3": 5.0
+ },
+ "vo_src": "assets/v2/vo_kisit.mp3",
+ "out": "1_KISIT"
+}

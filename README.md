@@ -45,6 +45,21 @@ ardından güncelleme **yalnızca** o kopyaya yazılır (yanlış sütuna yazma 
 
 Sayfa, "Adım Adım Uygulama Rehberleri" sayfasının altına oluşturulur.
 
+## Yeni senaryo seti (v2)
+
+`yasal.csv.ods` yerine artık hikâye odaklı 10 senaryoluk set kullanılıyor. Bu set için
+**`yasal_takip_v2_senaryo`** adlı ayrı bir Google E-Tablo oluşturuldu (aynı sütun yapısı,
+ID'ler senaryo setiyle birebir). Bir satırı işlemek için:
+
+1. `scripts/new_scenarios.json` içinden ilgili satırı al,
+2. `out/cfg.json` üret (bkz. `out/cfg_1.json` örneği): `cta`, `ekran_yazisi`, `tts`,
+   `kicker`, `images` (4 sahne), `blur` (okunabilir metin içeren sahneler), `vo_src`, `out`,
+3. `generate_speech` ile TTS al, `assets/v2/broll/` altına 4 dikey görsel üret,
+4. `VIDEO_CFG=cfg_1.json python3 scripts/render.py`
+
+Render artık tamamen config güdümlü: kesme sıklığı (`cut_every`), sahne sırası, blur
+miktarları, hook başlığı, kicker ve CTA metni hep config'den okunur.
+
 ## Dosyalar
 
 ```

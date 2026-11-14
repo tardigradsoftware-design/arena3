@@ -119,3 +119,19 @@ VIDEO_CFG=cfg_para.json python3 scripts/render.py   # -> videos/<out>.mp4
 
 `render.py` artık `CFG_DIR` (varsayılan `videos`) ve `broll_dir` alanını destekler; VO,
 zaman çizelgesi sabitlerinden önce modül yüklenirken üretilir.
+
+## Kinetik motor (kodla üretim, foto/AI görsel yok)
+
+`scripts/render_kinetic.py` — tamamen PIL ile çizilen dikey video motoru:
+krem kağıt + nokta ızgara zemin, kalın Montserrat tipografi, sticker çipler,
+sahte e-Devlet arama kartı, makbuz, kontrol listesi, dev skor kartı,
+vektör para/banknot illüstrasyonu ve maskot robot. TTS + SFX aynı hattan geçer.
+
+```bash
+python3 scripts/audio_build.py
+VIDEO_CFG=cfg_para_k.json python3 scripts/render_kinetic.py   # -> videos/<out>.mp4
+```
+
+Config: `cta`, `tts`, `vo_src`, `scenes[]` (tip: hook / ui / receipt / check / stat / cta,
+`dur` veya `weight`, `lines`, `hl`, `card`). Altyazılar TTS metninden otomatik üretilir.
+Örnek: `videos/cfg_para_k.json` (senaryo 1, PARA).

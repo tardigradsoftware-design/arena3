@@ -1,0 +1,117 @@
+{
+ "id": "1",
+ "cta": "PARA",
+ "out": "1_PARA_kinetik",
+ "kicker": "E-DEVLET REHBERİ",
+ "tts": "Bankaların ve kurumların sizden sakladığı unutulmuş paralarınız olabilir! Geçmişte girdiğiniz bir iş yerinde adınıza otomatik açılan bireysel emeklilik kesintileri, kapattığınızı sandığınız eski banka hesaplarındaki bakiyeler veya adınıza yatmış kurum iadeleri şu an Takasbank sisteminde bekliyor olabilir. Üstelik bu paralar zaman aşımına uğrayıp devlete geçmeden önce tek tıkla kontrol etme şansınız var. Hemen e-Devlet'e girip arama kısmına Takasbank yazarak adınıza biriken tutarları görebilir ve doğrudan kendi IBAN numaranıza aktarabilirsiniz. Hangi menüye gireceğinizi ve parayı hesabınıza çekme adımlarını resimli olarak görmek için yoruma PARA yazın, rehberi hemen göndereyim.",
+ "vo_src": "assets/v3/vo_para.mp3",
+ "scenes": [
+  {
+   "type": "hook",
+   "dur": 3.0,
+   "kicker": "E-DEVLET  •  10 DAKİKA",
+   "lines": [
+    "UNUTULAN",
+    "PARAN VAR!"
+   ],
+   "hl": [
+    1
+   ],
+   "sub": "TAKASBANK'TA BEKLİYOR",
+   "art": true
+  },
+  {
+   "type": "ui",
+   "weight": 1.0,
+   "kicker": "1. ADIM",
+   "lines": [
+    "E-DEVLET'E GİR",
+    "TAKASBANK YAZ"
+   ],
+   "hl": [
+    1
+   ],
+   "card": {
+    "query": "Takasbank",
+    "rows": [
+     "Bireysel Emeklilik İşlemleri",
+     "Devlet Katkısı Sorgulama",
+     "Unutulan Tutar İadesi"
+    ]
+   }
+  },
+  {
+   "type": "receipt",
+   "weight": 1.0,
+   "kicker": "2. ADIM",
+   "lines": [
+    "ADINA BİRİKEN",
+    "TUTARLAR"
+   ],
+   "hl": [
+    1
+   ],
+   "card": {
+    "rows": [
+     [
+      "2019 BES KESİNTİSİ",
+      "2.480 TL"
+     ],
+     [
+      "2021 KURUM İADESİ",
+      "1.150 TL"
+     ],
+     [
+      "ESKİ HESAP KALANI",
+      "860 TL"
+     ]
+    ],
+    "total": "4.490 TL"
+   }
+  },
+  {
+   "type": "check",
+   "weight": 1.0,
+   "kicker": "3. ADIM",
+   "lines": [
+    "PARA SENİN",
+    "HESABINA GEÇSİN"
+   ],
+   "hl": [
+    1
+   ],
+   "card": {
+    "rows": [
+     "KENDİ IBAN'INI GİR",
+     "İADE TALEBİNİ ONAYLA",
+     "5-15 GÜNDE HESABINDA"
+    ]
+   }
+  },
+  {
+   "type": "stat",
+   "weight": 0.75,
+   "kicker": "DİKKAT",
+   "lines": [
+    "PARA BEKLERSE",
+    "DEVLETE GEÇER"
+   ],
+   "hl": [
+    1
+   ],
+   "card": {
+    "big": "ZAMAN AŞIMI",
+    "small": "UNUTULAN TUTAR DEVLETE GEÇMEDEN SORGULA"
+   }
+  },
+  {
+   "type": "cta",
+   "word": "PARA",
+   "lines": [
+    "Yoruma PARA yaz,",
+    "rehberi gönderelim!"
+   ],
+   "note": "IBAN İADESİ + ADIM ADIM REHBER"
+  }
+ ]
+}
